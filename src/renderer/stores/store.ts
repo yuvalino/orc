@@ -1,6 +1,9 @@
 import { create } from 'zustand'
-import type { Account, AskAnswer, Item, ModelOption, Project, Session, SessionStatus } from '@shared/types'
+import type { Account, ApprovalMode, AskAnswer, Item, ModelOption, Project, Session, SessionStatus } from '@shared/types'
 import { applyPatch } from '@shared/types'
+
+/** What a new chat starts with; the composer edits these when no chat is open. */
+export interface Defaults { approvalMode: ApprovalMode; model: string | null; effort: string | null }
 
 interface State {
   projects: Project[]
@@ -15,8 +18,10 @@ interface State {
   draft: string
   palette: null | 'chats' | 'files'
   panel: null | { toolUseId: string | null } // Subagents panel: closed, the lists, or one agent's thread
+  defaults: Defaults
 
   init(): void
+  setDefaults(patch: Partial<Defaults>): void
   select(id: string): Promise<void>
   newChat(projectId?: string | null): void
   send(text: string): Promise<void>
@@ -34,9 +39,12 @@ const api = () => window.orc
 
 export const useStore = create<State>((set, get) => ({
   projects: [], sessions: [], activeId: null, draftProjectId: null, transcripts: {}, status: {}, unread: {}, models: [], account: null, draft: '', palette: null, panel: null,
+  defaults: { approvalMode: 'ask', model: null, effort: null },
 
   init() {
     api().projects.list().then((projects) => set((s) => ({ projects, draftProjectId: s.draftProjectId ?? projects[0]?.id ?? null }))) // a fresh chat starts in a project when one exists
+    Promise.all((['approvalMode', 'model', 'effort'] as const).map((k) => api().settings.get(k))).then(([approvalMode, model, effort]) =>
+      set((s) => ({ defaults: { approvalMode: (approvalMode as ApprovalMode) ?? s.defaults.approvalMode, model: (model as string) ?? null, effort: (effort as string) ?? null } })))
     api().sessions.list().then((sessions) => set({ sessions }))
     api().on('projects:changed', (projects) => set({ projects }))
     api().on('sessions:changed', (sessions) => set({ sessions }))
@@ -53,8 +61,10 @@ export const useStore = create<State>((set, get) => ({
     api().on('menu:new-chat', () => get().newChat())
   },
 
+  setDefaults(patch) { Object.entries(patch).forEach(([k, v]) => api().settings.set(k, v)); set((s) => ({ defaults: { ...s.defaults, ...patch } })) },
+
   async select(id) {
-    set((s) => { const unread = { ...s.unread }; delete unread[id]; return { activeId: id, unread, palette: null } })
+    set((s) => { const unread = { ...s.unread }; delete unread[id]; return { activeId: id, unread, palette: null, panel: s.panel && { toolUseId: null } } })
     if (!get().transcripts[id]) {
       const [items, status] = await Promise.all([api().sessions.open(id), api().sessions.status(id)])
       set((s) => ({ transcripts: { ...s.transcripts, [id]: items }, status: { ...s.status, [id]: status } }))
@@ -62,7 +72,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   // undefined keeps the current project choice; null means "no project" (home folder).
-  newChat(projectId) { set((s) => ({ activeId: null, palette: null, draftProjectId: projectId === undefined ? s.draftProjectId : projectId })) },
+  newChat(projectId) { set((s) => ({ activeId: null, palette: null, panel: s.panel && { toolUseId: null }, draftProjectId: projectId === undefined ? s.draftProjectId : projectId })) },
 
   async send(text) {
     let id = get().activeId

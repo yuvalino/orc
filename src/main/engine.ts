@@ -183,6 +183,14 @@ export class Engine {
     this.push('transcript:patch', { sessionId: id, patch: p })
   }
 
+  /** The process is gone: nothing still marked running will ever finish. */
+  private settle(id: string, e: Entry): void {
+    for (const i of e.items) {
+      if (i.kind !== 'tool' || (i.status !== 'running' && i.status !== 'awaiting_approval')) continue
+      this.apply(id, e, { op: 'update', id: i.id, partial: { status: 'interrupted', ...(i.task?.status === 'running' ? { task: { ...i.task, status: 'stopped', endedAt: Date.now() } } : {}) } })
+    }
+  }
+
   private setTool(id: string, e: Entry, toolUseId: string, status: ToolStatus): void {
     const t = e.items.find((i) => i.kind === 'tool' && i.toolUseId === toolUseId)
     if (t) this.apply(id, e, { op: 'update', id: t.id, partial: { status } })
@@ -191,7 +199,7 @@ export class Engine {
   private setStatus(id: string, e: Entry, st: Partial<SessionStatus>): void {
     e.status = { ...e.status, ...st }
     if ('rateLimit' in st && !st.rateLimit) delete e.status.rateLimit
-    if (st.state === 'closed') { e.live = null; e.status.tasks = 0 }
+    if (st.state === 'closed') { e.live = null; e.status.tasks = 0; this.settle(id, e) }
     clearTimeout(e.idleTimer)
     if (e.status.state === 'idle' && !e.status.tasks) e.idleTimer = setTimeout(() => this.close(id), IDLE_MS()) // background work keeps the process alive
     this.push('session:status', { sessionId: id, status: e.status })

@@ -1,6 +1,7 @@
 import type { EffortLevel, PermissionMode, PermissionResult, PermissionUpdate, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { app } from 'electron'
 import { existsSync } from 'fs'
+import { readFile } from 'fs/promises'
 import { join } from 'path'
 import type { ApprovalMode, Ask, AskAnswer, Item } from '@shared/types'
 import { applyPatch } from '@shared/types'
@@ -84,6 +85,10 @@ export class ClaudeCodec implements Codec {
           const out = reduce(st, msg)
           out.patches.forEach((patch) => sink.patch(patch))
           if (out.status) sink.status(out.status)
+          if (out.readOutput) { // a finished background command: its output is on disk, the notification only summarised it
+            const text = await readFile(out.readOutput.path, 'utf-8').catch(() => '')
+            if (text) sink.patch({ op: 'update', id: out.readOutput.id, partial: { result: { text: text.slice(-64_000), isError: false } } })
+          }
         }
       } catch (e) {
         sink.patch({ op: 'upsert', item: { kind: 'note', id: crypto.randomUUID(), level: 'error', text: e instanceof Error ? e.message : String(e) } })
@@ -121,7 +126,8 @@ export class ClaudeCodec implements Codec {
       const bg = /^Command running in background with ID: (\w+)/.exec(i.result?.text ?? '')
       if (i.name === 'Agent' || i.name === 'Task' || bg) {
         const done = i.status === 'done', startedAt = st.times[i.toolUseId] ?? 0, endedAt = st.times[`${i.toolUseId}:end`] ?? (done ? startedAt : undefined)
-        return { ...i, status: done ? 'done' : 'interrupted', task: { ...i.task, id: bg?.[1] ?? agentIds[i.toolUseId] ?? i.toolUseId, status: done ? 'completed' : i.status === 'error' ? 'failed' : 'stopped', background: !!bg || i.result?.text?.startsWith('Async agent') === true, startedAt, endedAt, model: i.task?.model } }
+        const status = done ? 'done' : i.status === 'error' ? 'error' : 'interrupted'
+        return { ...i, status, task: { ...i.task, id: bg?.[1] ?? agentIds[i.toolUseId] ?? i.toolUseId, status: done ? 'completed' : status === 'error' ? 'failed' : 'stopped', background: !!bg || i.result?.text?.startsWith('Async agent') === true, startedAt, endedAt } }
       }
       return i.status === 'running' ? { ...i, status: 'interrupted' } : i
     })

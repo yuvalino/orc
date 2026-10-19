@@ -16,10 +16,10 @@ const btn = 'flex items-center gap-[5px] rounded-md px-2.5 py-[5px] text-[13px] 
 
 export function Composer() {
   const { session, project } = useActive()
-  const { projects, send, interrupt, update, newChat, status, draft, setDraft } = useStore()
+  const { projects, send, interrupt, update, newChat, status, draft, setDraft, defaults, setDefaults } = useStore()
   const ref = useRef<HTMLTextAreaElement>(null)
   const running = session ? ['running', 'starting'].includes(status[session.id]?.state ?? '') : false
-  const mode = session?.approvalMode ?? 'ask'
+  const mode = session?.approvalMode ?? defaults.approvalMode
   const projectName = (p = project) => p ? (p.name ?? p.path.split('/').pop()) : 'No project'
   const projectItems = [
     { label: 'No project', detail: 'Runs in your home folder', active: !project, onSelect: () => newChat(null) },
@@ -42,7 +42,7 @@ export function Composer() {
     if (!t || running) return
     setDraft(''); send(t)
   }
-  const setMode = (m: ApprovalMode) => session ? update(session.id, { approvalMode: m }) : window.orc.settings.set('approvalMode', m)
+  const setMode = (m: ApprovalMode) => session ? update(session.id, { approvalMode: m }) : setDefaults({ approvalMode: m })
 
   return (
     <div className="px-[100px] pb-3.5 pt-2">

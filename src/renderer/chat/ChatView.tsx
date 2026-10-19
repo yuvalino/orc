@@ -3,10 +3,9 @@ import { Bot, Check, ChevronRight, Copy, FileText, Folder, Globe, Hand, ListChec
 import type { Item } from '@shared/types'
 import { AskCard } from './asks'
 import { Markdown } from './Markdown'
-import { LaunchRow, SubagentsButton, isLaunch } from './Subagents'
+import { LaunchRow, SubagentsButton, isLaunch, type Tool } from './agents'
 import { sessionTitle, useActive, useStore } from '../stores/store'
 
-type Tool = Extract<Item, { kind: 'tool' }>
 const HIDDEN_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
 interface Turn { user?: Extract<Item, { kind: 'user' }>; work: Item[]; final: Item[]; end?: Extract<Item, { kind: 'turn_end' }> }
@@ -20,7 +19,7 @@ function groupTurns(items: Item[]): Turn[] {
     if ('parent' in it && it.parent) continue // a subagent's own work shows in the Subagents panel
     if (it.kind === 'user') { flush(); t.user = it }
     else if (it.kind === 'turn_end') { t.end = it; flush() }
-    else if ((it.kind === 'text' && !it.parent) || it.kind === 'note') t.final.push(it) // replies and errors stay visible outside the fold
+    else if (it.kind === 'text' || it.kind === 'note') t.final.push(it) // replies and errors stay visible outside the fold
     else {
       if ((it.kind === 'tool' && HIDDEN_TOOLS.has(it.name)) || (it.kind === 'thinking' && !it.text && !it.streaming)) continue
       t.work.push(...t.final); t.final = []; t.work.push(it)
@@ -74,7 +73,7 @@ export function Turns({ items, running }: { items: Item[]; running: boolean }) {
 function TurnView({ turn, running }: { turn: Turn; running: boolean }) {
   return (
     <div className="flex flex-col gap-3.5">
-      {turn.user && <div className="mr-2.5 max-w-[65%] self-end rounded-3xl bg-bubble px-5 py-2.5 text-white whitespace-pre-wrap">{turn.user.text}</div>}
+      {turn.user && <div className="mr-2.5 max-w-[65%] self-end break-words rounded-3xl bg-bubble px-5 py-2.5 text-white whitespace-pre-wrap">{turn.user.text}</div>}
       {turn.work.length > 0 && <WorkSection items={turn.work} running={running && turn.final.length === 0} durationMs={turn.end?.durationMs} />}
       {turn.final.map((it) => it.kind === 'note' ? <WorkItem key={it.id} item={it} /> : it.kind === 'text' && (
         <div key={it.id} className="group">

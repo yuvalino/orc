@@ -43,7 +43,6 @@ export interface TaskInfo {
   endedAt?: number
   summary?: string // live one-liner while running, outcome when done
   model?: string
-  prompt?: string
 }
 
 export interface Question {
@@ -64,7 +63,7 @@ export type AskAnswer =
   | { type: 'plan'; decision: 'approve' | 'approve-edits' | 'reject'; feedback?: string }
 
 export type Item =
-  | { kind: 'user'; id: string; text: string }
+  | { kind: 'user'; id: string; text: string; parent?: string | null } // parent: the prompt a tool call gave its subagent
   | { kind: 'text'; id: string; text: string; streaming: boolean; parent: string | null }
   | { kind: 'thinking'; id: string; text: string; streaming: boolean; parent: string | null }
   | { kind: 'tool'; id: string; toolUseId: string; name: string; input: unknown; status: ToolStatus; parent: string | null; result?: { text: string; isError: boolean; data?: unknown }; task?: TaskInfo }

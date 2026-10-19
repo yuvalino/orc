@@ -9,7 +9,7 @@ const name = (s: string) => s.replace(/ \(recommended\)$/, '')
 
 /** Composer button "<model> <effort>": opens the effort slider; the model link inside it opens the model list. */
 export function ModelPicker({ session }: { session: Session | null }) {
-  const { models, update } = useStore()
+  const { models, update, defaults, setDefaults } = useStore()
   const [view, setView] = useState<null | 'effort' | 'models'>(null)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -20,12 +20,13 @@ export function ModelPicker({ session }: { session: Session | null }) {
   }, [view])
 
   const choices = models.filter((m) => !m.value.startsWith('claude-')) // aliases only; the dated ids are noise
-  const current = choices.find((m) => m.value === (session?.model ?? 'default')) ?? choices[0]
+  const sel = session ?? defaults // without a session the choice becomes the default for the next chat
+  const current = choices.find((m) => m.value === (sel.model ?? 'default')) ?? choices[0]
   if (!current) return null
-  const levels = current.effortLevels ?? [], effort = session?.effort ?? null
+  const levels = current.effortLevels ?? [], effort = sel.effort && levels.includes(sel.effort) ? sel.effort : null
   const idx = Math.max(0, levels.indexOf(effort ?? 'medium')), pct = levels.length > 1 ? (idx / (levels.length - 1)) * 100 : 0
-  // Without a session the choice becomes the default for the next chat.
-  const set = (patch: { model?: string | null; effort?: string | null }) => (session ? update(session.id, patch) : Object.entries(patch).forEach(([k, v]) => window.orc.settings.set(k, v)))
+  const set = (patch: { model?: string | null; effort?: string | null }) => (session ? update(session.id, patch) : setDefaults(patch))
+  const pick = (m: typeof current) => set({ model: m.value === 'default' ? null : m.value, ...(sel.effort && !m.effortLevels?.includes(sel.effort) ? { effort: null } : {}) }) // an effort the new model lacks resets
   const pop = 'absolute bottom-full right-0 z-50 mb-2 w-[250px] rounded-xl border border-line-strong bg-bg-composer shadow-xl'
 
   return (
@@ -50,7 +51,7 @@ export function ModelPicker({ session }: { session: Session | null }) {
         <div className={`${pop} p-1`}>
           <div className="px-2.5 pb-1 pt-1.5 text-[12px] text-fg-2">Select model</div>
           {choices.map((m, i) => (
-            <button key={m.value} onClick={() => { set({ model: m.value === 'default' ? null : m.value }); setView('effort') }} className="flex w-full items-center rounded-md px-2.5 py-1.5 text-[13px] hover:bg-bg-hover">
+            <button key={m.value} onClick={() => { pick(m); setView('effort') }} className="flex w-full items-center rounded-md px-2.5 py-1.5 text-[13px] hover:bg-bg-hover">
               <span className="flex flex-col"><span className={m.value === current.value ? 'text-fg-bright' : 'text-fg-sub'}>{name(m.displayName)}</span>{i === 0 && m.description && <span className="text-[11px] text-fg-2">{m.description}</span>}</span>
               {m.value === current.value && <span className="ml-auto text-fg-bright">✓</span>}
             </button>

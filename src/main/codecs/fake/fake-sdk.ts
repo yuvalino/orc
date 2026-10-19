@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readdirSync, readFileSync } from 'fs'
 import { join } from 'path'
 import type { SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { SdkModule } from '../claude/sdk'
@@ -24,7 +24,7 @@ export function createFakeSdk(dir: string): SdkModule {
 
     const play = async (text: string) => {
       const name = text.trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z0-9-]/g, '')
-      titles[sessionId] = `Chat about ${name}`
+      titles[sessionId] = `Chat about ${name}`; stopped = false
       let script = lines(name)
       if (!script.length) script = [{ type: 'assistant', uuid: crypto.randomUUID(), parent_tool_use_id: null, message: { id: 'm1', content: [{ type: 'text', text: `No fixture named ${name}` }] } }, { type: 'result', subtype: 'success', is_error: false, duration_ms: 1, uuid: crypto.randomUUID() }]
       for (let i = 0; i < script.length; i++) {
@@ -80,8 +80,9 @@ export function createFakeSdk(dir: string): SdkModule {
   return {
     query,
     getSessionMessages: async (id) => lines(`sessions/${id}`),
-    listSubagents: async () => [],
-    getSubagentMessages: async () => [],
+    // Subagent transcripts live beside the session: sessions/<id>.subagents/agent-<agentId>.jsonl
+    listSubagents: async (id) => { const d = join(dir, 'sessions', `${id}.subagents`); return existsSync(d) ? readdirSync(d).filter((f) => f.endsWith('.jsonl')).map((f) => f.slice('agent-'.length, -'.jsonl'.length)) : [] },
+    getSubagentMessages: async (id, agentId) => lines(`sessions/${id}.subagents/agent-${agentId}`),
     getSessionInfo: async (id) => (titles[id] || existsSync(join(dir, `sessions/${id}.jsonl`)) ? { sessionId: id, summary: titles[id] ?? 'Recorded chat', lastModified: 0 } : undefined),
     renameSession: async () => {},
     deleteSession: async () => {}

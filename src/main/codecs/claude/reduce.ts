@@ -6,18 +6,19 @@ export interface ReduceState {
   msgId: Record<string, string> // current streaming message per parent ('' = main thread)
   frames: Record<string, number>
   json: Record<string, string>
-  toolItems: Record<string, string>
+  toolItems: Record<string, string> // tool_use id → item id
   tasks: Record<string, TaskInfo> // keyed by tool item id; task events only carry a patch, so the whole object is kept here
   taskItems: Record<string, string> // task_id → tool item id
+  shellTasks: Set<string> // task ids of backgrounded commands, whose output lives in a file
   times: Record<string, number> // saved history only: a tool_use's timestamp, and `<toolUseId>:end` for its subagent's last row
   turnStart: number
   lastError?: string
 }
 
-export const newReduceState = (): ReduceState => ({ msgId: {}, frames: {}, json: {}, toolItems: {}, tasks: {}, taskItems: {}, times: {}, turnStart: Date.now() })
+export const newReduceState = (): ReduceState => ({ msgId: {}, frames: {}, json: {}, toolItems: {}, tasks: {}, taskItems: {}, shellTasks: new Set(), times: {}, turnStart: Date.now() })
 
 type Block = { type: string; text?: string; thinking?: string; id?: string; name?: string; input?: unknown }
-type Out = { patches: Patch[]; status?: Partial<SessionStatus> }
+type Out = { patches: Patch[]; status?: Partial<SessionStatus>; readOutput?: { id: string; path: string } } // readOutput: a finished command's output file, for the codec to load into the tool result
 
 const textOf = (c: unknown): string =>
   typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => (b?.type === 'text' ? b.text : '')).join('') : ''
@@ -34,8 +35,7 @@ function blockItem(st: ReduceState, id: string, b: Block, parent: string | null,
 }
 
 /** Merge a task change into the tool item that spawned it. */
-function setTask(st: ReduceState, patches: Patch[], toolUseId: string | undefined, partial: Partial<TaskInfo>): void {
-  const id = toolUseId && st.toolItems[toolUseId]
+function setTask(st: ReduceState, patches: Patch[], id: string | undefined, partial: Partial<TaskInfo>): void {
   if (!id) return
   const task = { ...(st.tasks[id] ?? { id: '', status: 'running', background: false, startedAt: Date.now() }), ...partial } as TaskInfo
   st.tasks[id] = task
@@ -54,7 +54,7 @@ export function reduce(st: ReduceState, msg: SDKMessage): Out {
   switch (msg.type) {
     case 'stream_event': {
       const e = m.event, key = parent ?? ''
-      if (e.type === 'message_start') st.msgId[key] = e.message.id
+      if (e.type === 'message_start') { st.msgId[key] = e.message.id; if (!parent) return { patches, status: { state: 'running' } } } // the CLI starts turns on its own when background work finishes
       const id = `${st.msgId[key]}:${e.index}`
       if (e.type === 'content_block_start') {
         const item = blockItem(st, id, e.content_block, parent, true)
@@ -85,7 +85,7 @@ export function reduce(st: ReduceState, msg: SDKMessage): Out {
         if (b.type === 'tool_use' && m.timestamp) st.times[b.id!] = Date.parse(m.timestamp)
       })
       if (parent && m.timestamp) st.times[`${parent}:end`] = Date.parse(m.timestamp)
-      if (parent && am?.model && st.toolItems[parent] && !st.tasks[st.toolItems[parent]]?.model) setTask(st, patches, parent, { model: am.model })
+      if (parent && am?.model && st.toolItems[parent] && !st.tasks[st.toolItems[parent]]?.model) setTask(st, patches, st.toolItems[parent], { model: am.model })
       break
     }
     case 'user': {
@@ -97,14 +97,14 @@ export function reduce(st: ReduceState, msg: SDKMessage): Out {
         if (!id) continue
         const text = textOf(tur?.content) || textOf(r.content) // an agent's own report beats the hand-back wrapper the model sees
         const launched = tur?.backgroundTaskId || tur?.status === 'async_launched' // placeholder result: the real outcome arrives as a task_notification
-        if (launched) setTask(st, patches, r.tool_use_id, { id: tur.backgroundTaskId ?? tur.agentId, background: true })
+        if (launched) setTask(st, patches, id, { id: tur.backgroundTaskId ?? tur.agentId, background: true })
         else patches.push({ op: 'update', id, partial: { status: r.is_error ? 'error' : 'done', result: { text, isError: !!r.is_error, data: tur } } })
       }
       const text = textOf(c)
-      if (results.length || !text || m.isSynthetic || parent) break // tool results, and a subagent's prompt, are not user messages
+      if (results.length || !text || m.isSynthetic) break
       // The CLI's own relay prompts (saved rows lose the isSynthetic flag) only mark where a follow-up turn begins.
       if (/^<(task-notification|system-reminder)\b/.test(text)) patches.push({ op: 'upsert', item: { kind: 'turn_end', id: m.uuid ?? crypto.randomUUID(), durationMs: 0, isError: false } })
-      else patches.push({ op: 'upsert', item: { kind: 'user', id: m.uuid ?? crypto.randomUUID(), text } })
+      else patches.push({ op: 'upsert', item: { kind: 'user', id: m.uuid ?? crypto.randomUUID(), text, parent } }) // with parent: the prompt a subagent was given
       break
     }
     case 'result': {
@@ -121,15 +121,21 @@ export function reduce(st: ReduceState, msg: SDKMessage): Out {
         case 'init': return { patches, status: { model: m.model } }
         case 'session_state_changed': return { patches, status: { state: m.state } }
         case 'compact_boundary': patches.push({ op: 'upsert', item: { kind: 'note', id: m.uuid, level: 'info', text: 'Context compacted' } }); break
-        case 'task_started': if (!m.skip_transcript) setTask(st, patches, m.tool_use_id, { id: m.task_id, status: 'running', background: !!m.is_backgrounded, startedAt: Date.now(), prompt: m.prompt }); break
-        case 'task_progress': setTask(st, patches, m.tool_use_id, { summary: m.description }); break
+        case 'task_started':
+          if (m.skip_transcript) break
+          if (m.task_type === 'local_bash') st.shellTasks.add(m.task_id)
+          setTask(st, patches, st.toolItems[m.tool_use_id], { id: m.task_id, status: 'running', background: !!m.is_backgrounded, startedAt: Date.now() })
+          break
+        case 'task_progress': setTask(st, patches, st.toolItems[m.tool_use_id], { summary: m.summary ?? m.description }); break
         case 'task_notification': {
           const id = st.taskItems[m.task_id] ?? (m.tool_use_id && st.toolItems[m.tool_use_id])
           if (!id) break
           const status = (m.status in TASK_END ? m.status : 'failed') as keyof typeof TASK_END
           const endedAt = Date.now(), dur = m.usage?.duration_ms
-          setTask(st, patches, Object.keys(st.toolItems).find((k) => st.toolItems[k] === id), { status, endedAt, summary: m.summary, ...(dur ? { startedAt: endedAt - dur } : {}) })
-          if (st.tasks[id].background) patches.push({ op: 'update', id, partial: { status: TASK_END[status], result: { text: m.summary ?? '', isError: status !== 'completed' } } })
+          setTask(st, patches, id, { status, endedAt, summary: m.summary, ...(dur ? { startedAt: endedAt - dur } : {}) })
+          if (!st.tasks[id].background) break
+          patches.push({ op: 'update', id, partial: { status: TASK_END[status], result: { text: m.summary ?? '', isError: status !== 'completed' } } })
+          if (st.shellTasks.has(m.task_id) && m.output_file) return { patches, readOutput: { id, path: m.output_file } }
           break
         }
         case 'background_tasks_changed': return { patches, status: { tasks: (m.tasks as { ambient?: boolean }[]).filter((t) => !t.ambient).length } }
