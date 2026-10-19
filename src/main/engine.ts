@@ -71,12 +71,12 @@ export class Engine {
   private async start(s: Session, e: Entry): Promise<void> {
     const open = [...this.entries].filter(([, x]) => x.live)
     if (open.length >= MAX_OPEN) {
-      const victim = open.filter(([, x]) => x.status.state === 'idle').sort((a, b) => this.session(a[0]).lastActivityAt - this.session(b[0]).lastActivityAt)[0]
+      const victim = open.filter(([, x]) => x.status.state === 'idle' && !x.status.tasks).sort((a, b) => this.session(a[0]).lastActivityAt - this.session(b[0]).lastActivityAt)[0]
       if (victim) this.close(victim[0])
     }
     this.setStatus(s.id, e, { state: 'starting' })
     e.live = await getCodec(s.codec).open(
-      { sessionId: s.id, cwd: this.cwd(s), resume: e.hasTranscript, approvalMode: s.approvalMode, model: s.model ?? undefined },
+      { sessionId: s.id, cwd: this.cwd(s), resume: e.hasTranscript, approvalMode: s.approvalMode, model: s.model ?? undefined, effort: s.effort ?? undefined },
       {
         patch: (p) => this.apply(s.id, e, p),
         status: (st) => this.setStatus(s.id, e, st),
@@ -127,6 +127,14 @@ export class Engine {
     this.push('sessions:changed', sessions.list())
     await this.entries.get(id)?.live?.setModel(model ?? undefined)
   }
+
+  async setEffort(id: string, effort: string | null): Promise<void> {
+    sessions.update(id, { effort })
+    this.push('sessions:changed', sessions.list())
+    await this.entries.get(id)?.live?.setEffort(effort ?? undefined)
+  }
+
+  async stopTask(id: string, taskId: string): Promise<void> { await this.entries.get(id)?.live?.stopTask(taskId) }
 
   async rename(id: string, title: string): Promise<void> {
     const s = sessions.update(id, { title })!
@@ -183,9 +191,9 @@ export class Engine {
   private setStatus(id: string, e: Entry, st: Partial<SessionStatus>): void {
     e.status = { ...e.status, ...st }
     if ('rateLimit' in st && !st.rateLimit) delete e.status.rateLimit
-    if (st.state === 'closed') e.live = null
+    if (st.state === 'closed') { e.live = null; e.status.tasks = 0 }
     clearTimeout(e.idleTimer)
-    if (st.state === 'idle') e.idleTimer = setTimeout(() => this.close(id), IDLE_MS())
+    if (e.status.state === 'idle' && !e.status.tasks) e.idleTimer = setTimeout(() => this.close(id), IDLE_MS()) // background work keeps the process alive
     this.push('session:status', { sessionId: id, status: e.status })
   }
 

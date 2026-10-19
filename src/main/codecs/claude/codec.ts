@@ -1,4 +1,4 @@
-import type { PermissionMode, PermissionResult, PermissionUpdate, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { EffortLevel, PermissionMode, PermissionResult, PermissionUpdate, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { app } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
@@ -64,7 +64,9 @@ export class ClaudeCodec implements Codec {
       permissionMode: MODES[p.approvalMode],
       allowDangerouslySkipPermissions: p.approvalMode === 'full-access',
       model: p.model,
+      effort: p.effort as EffortLevel | undefined,
       includePartialMessages: true,
+      agentProgressSummaries: true, // task_progress carries a one-line status for each subagent
       tools: { type: 'preset', preset: 'claude_code' },
       allowedTools: ['Grep', 'Glob', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'], // search and checklist tools are omitted unless listed; all side-effect free
       systemPrompt: { type: 'preset', preset: 'claude_code' },
@@ -91,9 +93,11 @@ export class ClaudeCodec implements Codec {
     return {
       send: (text, uuid) => input.push({ type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null, uuid: uuid as SDKUserMessage['uuid'] }),
       interrupt: async () => { await q.interrupt() },
+      stopTask: (id) => q.stopTask(id),
       setApprovalMode: (m) => q.setPermissionMode(MODES[m]),
       setModel: (m) => q.setModel(m),
-      info: async () => { const r = await q.initializationResult(); return { models: r.models.map(({ value, displayName, description }) => ({ value, displayName, description })), account: r.account ?? null } },
+      setEffort: (e) => q.applyFlagSettings({ effortLevel: (e as EffortLevel | undefined) ?? null }),
+      info: async () => { const r = await q.initializationResult(); return { models: r.models.map(({ value, displayName, description, supportedEffortLevels }) => ({ value, displayName, description, effortLevels: supportedEffortLevels })), account: r.account ?? null } },
       close: () => { input.end(); q.close() }
     }
   }
@@ -101,13 +105,26 @@ export class ClaudeCodec implements Codec {
   async loadTranscript(sessionId: string, cwd: string): Promise<Item[]> {
     const sdk = await loadSdk(), st = newReduceState()
     let items: Item[] = []
+    const agentIds: Record<string, string> = {} // spawning tool_use id → agent id
+    const feed = (ms: unknown[]) => { for (const m of ms) for (const patch of reduce(st, m as SDKMessage).patches) items = applyPatch(items, patch) }
     try {
-      for (const m of await sdk.getSessionMessages(sessionId, { dir: cwd })) {
-        for (const patch of reduce(st, m as unknown as SDKMessage).patches) items = applyPatch(items, patch)
+      feed(await sdk.getSessionMessages(sessionId, { dir: cwd }))
+      for (const agentId of await sdk.listSubagents(sessionId, { dir: cwd })) {
+        const ms = await sdk.getSubagentMessages(sessionId, agentId, { dir: cwd }) // rows carry parent_tool_use_id
+        if (ms[0]?.parent_tool_use_id) agentIds[ms[0].parent_tool_use_id] = agentId
+        feed(ms)
       }
     } catch { /* no transcript yet */ }
-    // A tool with no result was cut off when the process died.
-    return items.map((i) => (i.kind === 'tool' && i.status === 'running' ? { ...i, status: 'interrupted' } : i))
+    // Saved rows carry no task events or tool_use_result, so tasks are rebuilt from the tool itself; a tool with no result was cut off when the process died.
+    return items.map((i) => {
+      if (i.kind !== 'tool') return i
+      const bg = /^Command running in background with ID: (\w+)/.exec(i.result?.text ?? '')
+      if (i.name === 'Agent' || i.name === 'Task' || bg) {
+        const done = i.status === 'done', startedAt = st.times[i.toolUseId] ?? 0, endedAt = st.times[`${i.toolUseId}:end`] ?? (done ? startedAt : undefined)
+        return { ...i, status: done ? 'done' : 'interrupted', task: { ...i.task, id: bg?.[1] ?? agentIds[i.toolUseId] ?? i.toolUseId, status: done ? 'completed' : i.status === 'error' ? 'failed' : 'stopped', background: !!bg || i.result?.text?.startsWith('Async agent') === true, startedAt, endedAt, model: i.task?.model } }
+      }
+      return i.status === 'running' ? { ...i, status: 'interrupted' } : i
+    })
   }
 
   async sessionInfo(sessionId: string, cwd: string) {

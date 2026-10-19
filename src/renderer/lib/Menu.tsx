@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 export interface MenuItem { label: ReactNode; detail?: string; onSelect?: () => void; active?: boolean; danger?: boolean }
 
 /** Minimal popover menu anchored to its trigger. */
-export function Menu({ trigger, items, align = 'left', up, className = '' }: { trigger: ReactNode; items: MenuItem[]; align?: 'left' | 'right'; up?: boolean; className?: string }) {
+export function Menu({ trigger, items, header, align = 'left', up, className = '' }: { trigger: ReactNode; items: MenuItem[]; header?: string; align?: 'left' | 'right'; up?: boolean; className?: string }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -17,6 +17,7 @@ export function Menu({ trigger, items, align = 'left', up, className = '' }: { t
       <div onClick={(e) => { e.stopPropagation(); setOpen((o) => !o) }}>{trigger}</div>
       {open && (
         <div className={`absolute z-50 min-w-52 rounded-lg border border-line-strong bg-bg-composer p-1 shadow-xl ${align === 'right' ? 'right-0' : 'left-0'} ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+          {header && <div className="px-2.5 pb-1 pt-1.5 text-[12px] text-fg-2">{header}</div>}
           {items.map((it, i) => (
             <button key={i} onClick={(e) => { e.stopPropagation(); setOpen(false); it.onSelect?.() }}
               className={`flex w-full flex-col rounded-md px-2.5 py-1.5 text-[13px] hover:bg-bg-hover ${it.danger ? 'text-bad' : it.active ? 'text-fg-bright' : 'text-fg-sub'}`}>

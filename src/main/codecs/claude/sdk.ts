@@ -1,6 +1,6 @@
 import type * as Sdk from '@anthropic-ai/claude-agent-sdk'
 
-export type SdkModule = Pick<typeof Sdk, 'query' | 'getSessionMessages' | 'getSessionInfo' | 'renameSession' | 'deleteSession'>
+export type SdkModule = Pick<typeof Sdk, 'query' | 'getSessionMessages' | 'getSessionInfo' | 'renameSession' | 'deleteSession' | 'listSubagents' | 'getSubagentMessages'>
 
 let sdk: Promise<SdkModule> | undefined
 

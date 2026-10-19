@@ -1,17 +1,20 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { Item, Patch, SessionStatus } from '@shared/types'
+import type { Item, Patch, SessionStatus, TaskInfo } from '@shared/types'
 
 /** Per-session reducer state: maps streaming blocks and tool ids to transcript item ids. */
 export interface ReduceState {
-  msgId: string
+  msgId: Record<string, string> // current streaming message per parent ('' = main thread)
   frames: Record<string, number>
   json: Record<string, string>
   toolItems: Record<string, string>
+  tasks: Record<string, TaskInfo> // keyed by tool item id; task events only carry a patch, so the whole object is kept here
+  taskItems: Record<string, string> // task_id → tool item id
+  times: Record<string, number> // saved history only: a tool_use's timestamp, and `<toolUseId>:end` for its subagent's last row
   turnStart: number
   lastError?: string
 }
 
-export const newReduceState = (): ReduceState => ({ msgId: '', frames: {}, json: {}, toolItems: {}, turnStart: Date.now() })
+export const newReduceState = (): ReduceState => ({ msgId: {}, frames: {}, json: {}, toolItems: {}, tasks: {}, taskItems: {}, times: {}, turnStart: Date.now() })
 
 type Block = { type: string; text?: string; thinking?: string; id?: string; name?: string; input?: unknown }
 type Out = { patches: Patch[]; status?: Partial<SessionStatus> }
@@ -30,16 +33,29 @@ function blockItem(st: ReduceState, id: string, b: Block, parent: string | null,
   }
 }
 
+/** Merge a task change into the tool item that spawned it. */
+function setTask(st: ReduceState, patches: Patch[], toolUseId: string | undefined, partial: Partial<TaskInfo>): void {
+  const id = toolUseId && st.toolItems[toolUseId]
+  if (!id) return
+  const task = { ...(st.tasks[id] ?? { id: '', status: 'running', background: false, startedAt: Date.now() }), ...partial } as TaskInfo
+  st.tasks[id] = task
+  if (task.id) st.taskItems[task.id] = id
+  patches.push({ op: 'update', id, partial: { task } })
+}
+
+const TASK_END = { completed: 'done', failed: 'error', stopped: 'interrupted' } as const
+
 /** Pure: raw SDK message → transcript patches and status changes. Used for live streams and saved history alike. */
 export function reduce(st: ReduceState, msg: SDKMessage): Out {
   const patches: Patch[] = []
   const m = msg as Record<string, any>
+  const parent: string | null = m.parent_tool_use_id ?? null
 
   switch (msg.type) {
     case 'stream_event': {
-      const e = m.event, parent = m.parent_tool_use_id ?? null
-      if (e.type === 'message_start') st.msgId = e.message.id
-      const id = `${st.msgId}:${e.index}`
+      const e = m.event, key = parent ?? ''
+      if (e.type === 'message_start') st.msgId[key] = e.message.id
+      const id = `${st.msgId[key]}:${e.index}`
       if (e.type === 'content_block_start') {
         const item = blockItem(st, id, e.content_block, parent, true)
         if (item) patches.push({ op: 'upsert', item })
@@ -58,7 +74,7 @@ export function reduce(st: ReduceState, msg: SDKMessage): Out {
       break
     }
     case 'assistant': {
-      const am = m.message, mid: string = am?.id ?? m.uuid, parent = m.parent_tool_use_id ?? null
+      const am = m.message, mid: string = am?.id ?? m.uuid
       const blocks: Block[] = Array.isArray(am?.content) ? am.content : []
       if (m.error) { st.lastError = textOf(blocks) || String(m.error); patches.push({ op: 'upsert', item: { kind: 'note', id: `${m.uuid}:err`, level: 'error', text: st.lastError } }); break }
       // Live: one frame per completed block, consecutive frames share message.id. History: all blocks in one frame.
@@ -66,21 +82,29 @@ export function reduce(st: ReduceState, msg: SDKMessage): Out {
       blocks.forEach((b, i) => {
         const item = blockItem(st, `${mid}:${base + i}`, b, parent, false)
         if (item) patches.push({ op: 'upsert', item })
+        if (b.type === 'tool_use' && m.timestamp) st.times[b.id!] = Date.parse(m.timestamp)
       })
+      if (parent && m.timestamp) st.times[`${parent}:end`] = Date.parse(m.timestamp)
+      if (parent && am?.model && st.toolItems[parent] && !st.tasks[st.toolItems[parent]]?.model) setTask(st, patches, parent, { model: am.model })
       break
     }
     case 'user': {
       if (m.isReplay) break
-      const c = m.message?.content
+      const c = m.message?.content, tur = m.tool_use_result
       const results: any[] = Array.isArray(c) ? c.filter((b) => b?.type === 'tool_result') : []
       for (const r of results) {
         const id = st.toolItems[r.tool_use_id]
         if (!id) continue
-        const text = textOf(r.content)
-        patches.push({ op: 'update', id, partial: { status: r.is_error ? 'error' : 'done', result: { text, isError: !!r.is_error, data: m.tool_use_result } } })
+        const text = textOf(tur?.content) || textOf(r.content) // an agent's own report beats the hand-back wrapper the model sees
+        const launched = tur?.backgroundTaskId || tur?.status === 'async_launched' // placeholder result: the real outcome arrives as a task_notification
+        if (launched) setTask(st, patches, r.tool_use_id, { id: tur.backgroundTaskId ?? tur.agentId, background: true })
+        else patches.push({ op: 'update', id, partial: { status: r.is_error ? 'error' : 'done', result: { text, isError: !!r.is_error, data: tur } } })
       }
       const text = textOf(c)
-      if (!results.length && text && !m.isSynthetic) patches.push({ op: 'upsert', item: { kind: 'user', id: m.uuid ?? crypto.randomUUID(), text } })
+      if (results.length || !text || m.isSynthetic || parent) break // tool results, and a subagent's prompt, are not user messages
+      // The CLI's own relay prompts (saved rows lose the isSynthetic flag) only mark where a follow-up turn begins.
+      if (/^<(task-notification|system-reminder)\b/.test(text)) patches.push({ op: 'upsert', item: { kind: 'turn_end', id: m.uuid ?? crypto.randomUUID(), durationMs: 0, isError: false } })
+      else patches.push({ op: 'upsert', item: { kind: 'user', id: m.uuid ?? crypto.randomUUID(), text } })
       break
     }
     case 'result': {
@@ -93,9 +117,23 @@ export function reduce(st: ReduceState, msg: SDKMessage): Out {
       return { patches, status: { state: 'idle' } }
     }
     case 'system':
-      if (m.subtype === 'init') return { patches, status: { model: m.model } }
-      if (m.subtype === 'session_state_changed') return { patches, status: { state: m.state } }
-      if (m.subtype === 'compact_boundary') patches.push({ op: 'upsert', item: { kind: 'note', id: m.uuid, level: 'info', text: 'Context compacted' } })
+      switch (m.subtype) {
+        case 'init': return { patches, status: { model: m.model } }
+        case 'session_state_changed': return { patches, status: { state: m.state } }
+        case 'compact_boundary': patches.push({ op: 'upsert', item: { kind: 'note', id: m.uuid, level: 'info', text: 'Context compacted' } }); break
+        case 'task_started': if (!m.skip_transcript) setTask(st, patches, m.tool_use_id, { id: m.task_id, status: 'running', background: !!m.is_backgrounded, startedAt: Date.now(), prompt: m.prompt }); break
+        case 'task_progress': setTask(st, patches, m.tool_use_id, { summary: m.description }); break
+        case 'task_notification': {
+          const id = st.taskItems[m.task_id] ?? (m.tool_use_id && st.toolItems[m.tool_use_id])
+          if (!id) break
+          const status = (m.status in TASK_END ? m.status : 'failed') as keyof typeof TASK_END
+          const endedAt = Date.now(), dur = m.usage?.duration_ms
+          setTask(st, patches, Object.keys(st.toolItems).find((k) => st.toolItems[k] === id), { status, endedAt, summary: m.summary, ...(dur ? { startedAt: endedAt - dur } : {}) })
+          if (st.tasks[id].background) patches.push({ op: 'update', id, partial: { status: TASK_END[status], result: { text: m.summary ?? '', isError: status !== 'completed' } } })
+          break
+        }
+        case 'background_tasks_changed': return { patches, status: { tasks: (m.tasks as { ambient?: boolean }[]).filter((t) => !t.ambient).length } }
+      }
       break
     case 'rate_limit_event': {
       const r = m.rate_limit_info

@@ -12,13 +12,16 @@ export interface OpenParams {
   resume: boolean
   approvalMode: ApprovalMode
   model?: string
+  effort?: string
 }
 
 export interface CodecSession {
   send(text: string, uuid: string): void
   interrupt(): Promise<void>
+  stopTask(taskId: string): Promise<void>
   setApprovalMode(mode: ApprovalMode): Promise<void>
   setModel(model?: string): Promise<void>
+  setEffort(effort?: string): Promise<void>
   info(): Promise<{ models: ModelOption[]; account: Account | null }>
   close(): void
 }

@@ -3,6 +3,7 @@ import { Bot, Check, ChevronRight, Copy, FileText, Folder, Globe, Hand, ListChec
 import type { Item } from '@shared/types'
 import { AskCard } from './asks'
 import { Markdown } from './Markdown'
+import { LaunchRow, SubagentsButton, isLaunch } from './Subagents'
 import { sessionTitle, useActive, useStore } from '../stores/store'
 
 type Tool = Extract<Item, { kind: 'tool' }>
@@ -16,6 +17,7 @@ function groupTurns(items: Item[]): Turn[] {
   let t: Turn = { work: [], final: [] }
   const flush = () => { if (t.user || t.work.length || t.final.length) turns.push(t); t = { work: [], final: [] } }
   for (const it of items) {
+    if ('parent' in it && it.parent) continue // a subagent's own work shows in the Subagents panel
     if (it.kind === 'user') { flush(); t.user = it }
     else if (it.kind === 'turn_end') { t.end = it; flush() }
     else if ((it.kind === 'text' && !it.parent) || it.kind === 'note') t.final.push(it) // replies and errors stay visible outside the fold
@@ -38,13 +40,15 @@ export function ChatView() {
   useEffect(() => { if (stick.current) ref.current?.scrollTo({ top: ref.current.scrollHeight }) }, [items])
   const onScroll = () => { const el = ref.current!; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60 }
 
-  const turns = groupTurns(items ?? [])
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="drag flex h-[46px] shrink-0 items-center gap-2 border-b border-line px-4 text-[14px] font-medium text-fg-bright">
         <Folder size={18} className="shrink-0 text-fg-2" />
         <span className="truncate">{session ? sessionTitle(session) : <span className="text-fg-2">New session</span>}</span>
-        {status?.rateLimit && <span className="ml-auto rounded-full bg-warn/15 px-2 py-0.5 text-[11px] text-warn">Usage {Math.round((status.rateLimit.utilization ?? 0) * 100)}%</span>}
+        <div className="no-drag ml-auto flex shrink-0 items-center gap-2">
+          {status?.rateLimit && <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[11px] text-warn">Usage {Math.round((status.rateLimit.utilization ?? 0) * 100)}%</span>}
+          {session && <SubagentsButton />}
+        </div>
       </div>
       {!session ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-1.5 text-fg-3">
@@ -54,13 +58,17 @@ export function ChatView() {
         </div>
       ) : (
         <div ref={ref} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-[100px] py-3">
-          <div className="flex flex-col gap-3.5">
-            {turns.map((t, i) => <TurnView key={t.user?.id ?? i} turn={t} running={i === turns.length - 1 && status?.state !== 'idle' && status?.state !== 'closed' && !t.end} />)}
-          </div>
+          <Turns items={items ?? []} running={!!status && status.state !== 'idle' && status.state !== 'closed'} />
         </div>
       )}
     </div>
   )
+}
+
+/** The transcript body; also renders a subagent's thread in the panel. `running` applies to the last turn. */
+export function Turns({ items, running }: { items: Item[]; running: boolean }) {
+  const turns = groupTurns(items)
+  return <div className="flex flex-col gap-3.5">{turns.map((t, i) => <TurnView key={t.user?.id ?? i} turn={t} running={running && i === turns.length - 1 && !t.end} />)}</div>
 }
 
 function TurnView({ turn, running }: { turn: Turn; running: boolean }) {
@@ -104,9 +112,22 @@ function WorkSection({ items, running, durationMs }: { items: Item[]; running: b
         {running && <Loader2 size={13} className="animate-spin" />}<span className="truncate">{label}</span>
         <ChevronRight size={13} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
       </button>
-      {open && <div className="mt-2 flex flex-col gap-1">{items.map((it) => <WorkItem key={it.id} item={it} />)}</div>}
+      {open && <div className="mt-2 flex flex-col gap-1">{workRows(items)}</div>}
     </div>
   )
+}
+
+/** Consecutive launches ("A and B started working") share one row; everything else is a WorkItem. */
+function workRows(items: Item[]): React.ReactNode[] {
+  const rows: React.ReactNode[] = []
+  let group: Tool[] = []
+  const flush = () => { if (group.length) rows.push(<LaunchRow key={group[0].id} tools={group} />); group = [] }
+  for (const it of items) {
+    if (it.kind === 'tool' && isLaunch(it)) group.push(it)
+    else { flush(); rows.push(<WorkItem key={it.id} item={it} />) }
+  }
+  flush()
+  return rows
 }
 
 function WorkItem({ item }: { item: Item }) {
@@ -140,7 +161,7 @@ function toolLabel(t: Tool): { icon: typeof FileText; text: string } {
     case 'Bash': return { icon: Terminal, text: `${v('Run', 'Ran')} ${short(i.command)}` }
     case 'Grep': case 'Glob': return { icon: Search, text: `${v('Search', 'Searched')} ${short(i.pattern)}${d.numFiles ? ` · ${d.numFiles} files` : ''}` }
     case 'WebFetch': case 'WebSearch': return { icon: Globe, text: short(i.url ?? i.query) }
-    case 'Agent': case 'Task': return { icon: Bot, text: `Agent: ${short(i.description)}` }
+    case 'Agent': case 'Task': return { icon: Bot, text: `Agent: ${short(i.description)}${t.task?.summary ? ` · ${t.task.summary}` : ''}` }
     case 'TaskCreate': return { icon: ListChecks, text: `Task: ${short(i.subject)}` }
     case 'TaskUpdate': return { icon: ListChecks, text: `Task #${i.taskId} → ${i.status ?? 'updated'}` }
     default: return { icon: Wrench, text: mcp ? `${mcp[2]} (${mcp[1]})` : t.name }

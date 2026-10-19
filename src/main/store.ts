@@ -43,9 +43,9 @@ export const projects = {
 export const sessions = {
   list: () => sessionsFile.read(),
   find: (id: string) => sessionsFile.read().find((s) => s.id === id),
-  create(projectId: string | null, codec: string, approvalMode: Session['approvalMode']): Session {
+  create(projectId: string | null, codec: string, defaults: Pick<Session, 'approvalMode' | 'model' | 'effort'>): Session {
     const now = Date.now()
-    const s: Session = { id: crypto.randomUUID(), projectId, codec, title: null, autoTitle: null, isPinned: false, createdAt: now, lastActivityAt: now, approvalMode, model: null }
+    const s: Session = { id: crypto.randomUUID(), projectId, codec, title: null, autoTitle: null, isPinned: false, createdAt: now, lastActivityAt: now, ...defaults }
     sessionsFile.write([...sessionsFile.read(), s])
     return s
   },

@@ -3,6 +3,7 @@ import { ArrowUp, ChevronDown, Folder, ShieldCheck, Square } from 'lucide-react'
 import type { ApprovalMode } from '@shared/types'
 import { Menu } from '../lib/Menu'
 import { useActive, useStore } from '../stores/store'
+import { ModelPicker } from './ModelPicker'
 
 const MODE_LABEL: Record<ApprovalMode, string> = { ask: 'Ask for approval', auto: 'Auto mode', 'full-access': 'Bypass permissions', 'accept-edits': 'Accept edits', 'read-only': 'Read only' }
 const MENU: { mode: ApprovalMode; detail: string; danger?: boolean }[] = [
@@ -15,11 +16,10 @@ const btn = 'flex items-center gap-[5px] rounded-md px-2.5 py-[5px] text-[13px] 
 
 export function Composer() {
   const { session, project } = useActive()
-  const { projects, models, send, interrupt, update, newChat, status, draft, setDraft } = useStore()
+  const { projects, send, interrupt, update, newChat, status, draft, setDraft } = useStore()
   const ref = useRef<HTMLTextAreaElement>(null)
   const running = session ? ['running', 'starting'].includes(status[session.id]?.state ?? '') : false
   const mode = session?.approvalMode ?? 'ask'
-  const model = models.find((m) => m.value === session?.model) ?? models[0]
   const projectName = (p = project) => p ? (p.name ?? p.path.split('/').pop()) : 'No project'
   const projectItems = [
     { label: 'No project', detail: 'Runs in your home folder', active: !project, onSelect: () => newChat(null) },
@@ -57,8 +57,7 @@ export function Composer() {
           <Menu up trigger={<button className={`${btn} ${mode === 'full-access' ? 'text-bad hover:text-bad' : ''}`}><ShieldCheck size={15} />{MODE_LABEL[mode]}</button>}
             items={MENU.map((m) => ({ label: MODE_LABEL[m.mode], detail: m.detail, danger: m.danger, active: m.mode === mode, onSelect: () => setMode(m.mode) }))} />
           <div className="flex-1" />
-          {models.length > 0 && <Menu up align="right" trigger={<button className={btn}>{model?.displayName}<ChevronDown size={10} /></button>}
-            items={models.map((m) => ({ label: m.displayName, detail: m.description, active: m.value === model?.value, onSelect: () => session && update(session.id, { model: m.value }) }))} />}
+          <ModelPicker session={session} />
           {running
             ? <button onClick={interrupt} className="ml-1 flex size-8 items-center justify-center rounded-full bg-fg-bright text-bg" title="Stop (Esc)"><Square size={12} fill="currentColor" /></button>
             : <button onClick={submit} disabled={!draft.trim()} className="ml-1 flex size-8 items-center justify-center rounded-full bg-accent text-white disabled:opacity-40" title="Send"><ArrowUp size={16} strokeWidth={2.5} /></button>}

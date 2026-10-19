@@ -20,6 +20,7 @@ export interface Session {
   lastActivityAt: number
   approvalMode: ApprovalMode
   model: string | null
+  effort?: string | null
 }
 
 export type RuntimeState = 'closed' | 'starting' | 'idle' | 'running' | 'requires_action'
@@ -27,10 +28,23 @@ export type RuntimeState = 'closed' | 'starting' | 'idle' | 'running' | 'require
 export interface SessionStatus {
   state: RuntimeState
   model?: string
+  tasks?: number // live subagents / background commands, which can outlast a turn
   rateLimit?: { status: 'allowed_warning' | 'rejected'; utilization?: number; resetsAt?: number }
 }
 
 export type ToolStatus = 'running' | 'awaiting_approval' | 'done' | 'error' | 'denied' | 'interrupted'
+
+/** A subagent or background command spawned by a tool call; tracked by the codec's task events. */
+export interface TaskInfo {
+  id: string
+  status: 'running' | 'completed' | 'failed' | 'stopped'
+  background: boolean
+  startedAt: number
+  endedAt?: number
+  summary?: string // live one-liner while running, outcome when done
+  model?: string
+  prompt?: string
+}
 
 export interface Question {
   question: string
@@ -53,7 +67,7 @@ export type Item =
   | { kind: 'user'; id: string; text: string }
   | { kind: 'text'; id: string; text: string; streaming: boolean; parent: string | null }
   | { kind: 'thinking'; id: string; text: string; streaming: boolean; parent: string | null }
-  | { kind: 'tool'; id: string; toolUseId: string; name: string; input: unknown; status: ToolStatus; parent: string | null; result?: { text: string; isError: boolean; data?: unknown } }
+  | { kind: 'tool'; id: string; toolUseId: string; name: string; input: unknown; status: ToolStatus; parent: string | null; result?: { text: string; isError: boolean; data?: unknown }; task?: TaskInfo }
   | { kind: 'ask'; id: string; ask: Ask; answer?: AskAnswer; cancelled?: true }
   | { kind: 'note'; id: string; level: 'info' | 'error'; text: string }
   | { kind: 'turn_end'; id: string; durationMs: number; isError: boolean; stopped?: boolean }
@@ -77,5 +91,5 @@ export function applyPatch(items: Item[], p: Patch): Item[] {
   }
 }
 
-export interface ModelOption { value: string; displayName: string; description?: string }
+export interface ModelOption { value: string; displayName: string; description?: string; effortLevels?: string[] }
 export interface Account { email?: string; subscriptionType?: string }

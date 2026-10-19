@@ -4,6 +4,7 @@ import { Sidebar } from '../sidebar/Sidebar'
 import { ChatView } from '../chat/ChatView'
 import { Composer } from '../composer/Composer'
 import { Palette } from '../lib/Palette'
+import { SubagentsPanel } from '../chat/Subagents'
 
 export default function App() {
   const { init, openPalette, newChat } = useStore()
@@ -24,6 +25,7 @@ export default function App() {
         <ChatView />
         <Composer />
       </main>
+      <SubagentsPanel />
       <Palette />
     </div>
   )

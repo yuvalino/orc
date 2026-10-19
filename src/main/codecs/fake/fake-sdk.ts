@@ -5,7 +5,8 @@ import type { SdkModule } from '../claude/sdk'
 
 /**
  * Scripted stand-in for the SDK, driven by recorded fixtures (see scripts/record-fixture.mjs).
- * Each user prompt selects `<dir>/<first-word>.jsonl`; a `{"__ask": …}` line replays a canUseTool call.
+ * Each user prompt selects `<dir>/<first-word>.jsonl`; a `{"__ask": …}` line replays a canUseTool call,
+ * a `{"__sleep": ms}` line pauses (and ends the script early if a task was stopped meanwhile).
  */
 export function createFakeSdk(dir: string): SdkModule {
   const titles: Record<string, string> = {}
@@ -17,7 +18,7 @@ export function createFakeSdk(dir: string): SdkModule {
 
   const query: SdkModule['query'] = ({ prompt, options = {} }) => {
     const sessionId = (options.resume ?? options.sessionId ?? 'fake') as string
-    const out: SDKMessage[] = []; let wake: (() => void) | null = null; let closed = false; let interrupted = false
+    const out: SDKMessage[] = []; let wake: (() => void) | null = null; let closed = false; let interrupted = false; let stopped = false
     const emit = (m: any) => { out.push({ ...m, session_id: sessionId }); wake?.(); wake = null }
     const result = (extra = {}) => emit({ type: 'result', subtype: 'success', is_error: false, duration_ms: 42, uuid: crypto.randomUUID(), ...extra })
 
@@ -41,6 +42,7 @@ export function createFakeSdk(dir: string): SdkModule {
           }
           continue
         }
+        if (l.__sleep) { await sleep(l.__sleep); if (stopped) return; continue }
         emit(l)
         if (l.type === 'stream_event') await sleep(15)
       }
@@ -59,9 +61,18 @@ export function createFakeSdk(dir: string): SdkModule {
         }
       },
       interrupt: async () => { interrupted = true },
+      stopTask: async (taskId: string) => {
+        stopped = true
+        emit({ type: 'system', subtype: 'task_notification', task_id: taskId, status: 'stopped', summary: 'Stopped by user', uuid: crypto.randomUUID() })
+        emit({ type: 'system', subtype: 'background_tasks_changed', tasks: [], uuid: crypto.randomUUID() })
+      },
       close: () => { closed = true; wake?.() },
-      setPermissionMode: async () => {}, setModel: async () => {},
-      initializationResult: async () => ({ models: [{ value: 'opus', displayName: 'Opus 4.6', description: 'Most capable' }, { value: 'sonnet', displayName: 'Sonnet 4.6', description: 'Fast' }], account: { email: 'test@example.com', subscriptionType: 'max' } })
+      setPermissionMode: async () => {}, setModel: async () => {}, applyFlagSettings: async () => {},
+      initializationResult: async () => ({ models: [
+        { value: 'default', displayName: 'Default (recommended)', description: 'Opus 4.6 · Best for everyday tasks', supportedEffortLevels: ['low', 'medium', 'high', 'max'] },
+        { value: 'opus', displayName: 'Opus 4.6', description: 'Most capable', supportedEffortLevels: ['low', 'medium', 'high', 'max'] },
+        { value: 'sonnet', displayName: 'Sonnet 4.6', description: 'Fast', supportedEffortLevels: ['low', 'medium', 'high'] }
+      ], account: { email: 'test@example.com', subscriptionType: 'max' } })
     }
     return q as unknown as ReturnType<SdkModule['query']>
   }
@@ -69,6 +80,8 @@ export function createFakeSdk(dir: string): SdkModule {
   return {
     query,
     getSessionMessages: async (id) => lines(`sessions/${id}`),
+    listSubagents: async () => [],
+    getSubagentMessages: async () => [],
     getSessionInfo: async (id) => (titles[id] || existsSync(join(dir, `sessions/${id}.jsonl`)) ? { sessionId: id, summary: titles[id] ?? 'Recorded chat', lastModified: 0 } : undefined),
     renameSession: async () => {},
     deleteSession: async () => {}

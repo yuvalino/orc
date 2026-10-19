@@ -30,17 +30,19 @@ const handlers: Handlers = {
   sessions: {
     list: async () => sessions.list(),
     create: async (projectId) => {
-      const s = sessions.create(projectId, DEFAULT_CODEC, (settings.get('approvalMode') as ApprovalMode) ?? 'ask')
+      const s = sessions.create(projectId, DEFAULT_CODEC, { approvalMode: (settings.get('approvalMode') as ApprovalMode) ?? 'ask', model: (settings.get('model') as string) ?? null, effort: (settings.get('effort') as string) ?? null })
       push('sessions:changed', sessions.list())
       return s
     },
     open: (id) => engine.open(id),
     send: (id, text) => engine.send(id, text),
     interrupt: (id) => engine.interrupt(id),
+    stopTask: (id, taskId) => engine.stopTask(id, taskId),
     update: async (id, patch) => {
       if (patch.title !== undefined) await engine.rename(id, patch.title ?? '')
       if (patch.approvalMode) await engine.setApprovalMode(id, patch.approvalMode)
       if (patch.model !== undefined) await engine.setModel(id, patch.model)
+      if (patch.effort !== undefined) await engine.setEffort(id, patch.effort)
       if (patch.isPinned !== undefined) { sessions.update(id, { isPinned: patch.isPinned }); push('sessions:changed', sessions.list()) }
     },
     remove: (id) => engine.remove(id),

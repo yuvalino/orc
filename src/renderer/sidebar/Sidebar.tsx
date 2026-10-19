@@ -45,7 +45,7 @@ function Indicator({ ids }: { ids: string[] }) {
   const { status, unread } = useStore()
   const states = ids.map((id) => status[id]?.state)
   if (states.includes('requires_action')) return <span className="size-2 shrink-0 rounded-full bg-warn" title="Needs your attention" />
-  if (states.some((s) => s === 'running' || s === 'starting')) return <span title="Working" className="flex shrink-0"><Loader2 size={13} className="animate-spin text-fg-2" /></span>
+  if (states.some((s) => s === 'running' || s === 'starting') || ids.some((id) => status[id]?.tasks)) return <span title="Working" className="flex shrink-0"><Loader2 size={13} className="animate-spin text-fg-2" /></span>
   if (ids.some((id) => unread[id])) return <span className="size-2 shrink-0 rounded-full bg-accent" title="Finished" />
   return null
 }

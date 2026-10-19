@@ -35,6 +35,8 @@
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-thumb { background: var(--color-fg-3); border-radius: 3px; }
 }
+input.effort { -webkit-appearance: none; height: 22px; border-radius: 11px; outline: none; }
+input.effort::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5); cursor: pointer; }
 .drag { -webkit-app-region: drag; }
 .no-drag { -webkit-app-region: no-drag; }
 @keyframes blink { 50% { opacity: 0; } }

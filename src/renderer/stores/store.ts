@@ -14,12 +14,15 @@ interface State {
   account: Account | null
   draft: string
   palette: null | 'chats' | 'files'
+  panel: null | { toolUseId: string | null } // Subagents panel: closed, the lists, or one agent's thread
 
   init(): void
   select(id: string): Promise<void>
   newChat(projectId?: string | null): void
   send(text: string): Promise<void>
   interrupt(): Promise<void>
+  stopTask(taskId: string): Promise<void>
+  setPanel(panel: State['panel']): void
   answer(askId: string, answer: AskAnswer): Promise<void>
   update(id: string, patch: Parameters<Window['orc']['sessions']['update']>[1]): Promise<void>
   setDraft(text: string): void
@@ -30,7 +33,7 @@ interface State {
 const api = () => window.orc
 
 export const useStore = create<State>((set, get) => ({
-  projects: [], sessions: [], activeId: null, draftProjectId: null, transcripts: {}, status: {}, unread: {}, models: [], account: null, draft: '', palette: null,
+  projects: [], sessions: [], activeId: null, draftProjectId: null, transcripts: {}, status: {}, unread: {}, models: [], account: null, draft: '', palette: null, panel: null,
 
   init() {
     api().projects.list().then((projects) => set((s) => ({ projects, draftProjectId: s.draftProjectId ?? projects[0]?.id ?? null }))) // a fresh chat starts in a project when one exists
@@ -72,6 +75,8 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async interrupt() { const id = get().activeId; if (id) await api().sessions.interrupt(id) },
+  async stopTask(taskId) { const id = get().activeId; if (id) await api().sessions.stopTask(id, taskId) },
+  setPanel: (panel) => set({ panel }),
   async answer(askId, answer) { await api().answerAsk(askId, answer) },
   async update(id, patch) { await api().sessions.update(id, patch) },
   setDraft: (draft) => set({ draft }),
