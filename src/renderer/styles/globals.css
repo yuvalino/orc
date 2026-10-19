@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+/* Tokens from mockups/orc-mockup.html */
+@theme {
+  --color-bg: #1e1e1e;
+  --color-bg-sidebar: #252526;
+  --color-bg-composer: #303030;
+  --color-bg-hover: #2a2d2e;
+  --color-bg-active: rgba(255, 255, 255, 0.08);
+  --color-bubble: #2563eb;
+  --color-fg: #cccccc;
+  --color-fg-bright: #e5e5e5;
+  --color-fg-sub: #bbbbbb;
+  --color-fg-2: #888888;
+  --color-fg-3: #555555;
+  --color-fg-label: #909090;
+  --color-line: #2a2a2a;
+  --color-line-strong: #333333;
+  --color-accent: #2563eb;
+  --color-ok: #4ade80;
+  --color-warn: #f5b847;
+  --color-bad: #ef4444;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+
+/* Base resets live in the base layer so Tailwind utilities can override them. */
+@layer base {
+  :root { color-scheme: dark; }
+  html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+  body { background: var(--color-bg); color: var(--color-fg); font-family: var(--font-sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  button:disabled { cursor: default; }
+  textarea, input { font: inherit; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-thumb { background: var(--color-fg-3); border-radius: 3px; }
+}
+.drag { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
+@keyframes blink { 50% { opacity: 0; } }
+.caret::after { content: ""; display: inline-block; width: 7px; height: 16px; margin-left: 2px; vertical-align: text-bottom; background: var(--color-accent); border-radius: 1px; animation: blink 1s step-end infinite; }
+
+.md { line-height: 1.6; } .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 6px; } .md ul, .md ol { margin: 4px 0 6px; padding-left: 24px; } .md li { margin-bottom: 3px; }
+.md strong { color: var(--color-fg-bright); font-weight: 600; }
+.md h1, .md h2, .md h3 { font-weight: 600; color: var(--color-fg-bright); margin: 14px 0 6px; } .md h1 { font-size: 20px; } .md h2 { font-size: 17px; } .md h3 { font-size: 15px; }
+.md code { font-family: var(--font-mono); font-size: 12.5px; background: var(--color-bg-active); padding: 2px 6px; border-radius: 4px; color: var(--color-fg-bright); }
+.md pre { background: #141414; border: 1px solid var(--color-line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 8px 0; }
+.md pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.5; color: var(--color-fg); }
+.md a { color: var(--color-accent); text-decoration: underline; } .md blockquote { border-left: 3px solid var(--color-line-strong); margin: 8px 0; padding: 4px 12px; color: var(--color-fg-2); }
+.md hr { border: 0; border-top: 1px solid var(--color-line); margin: 12px 0; }
+.md table { border-collapse: collapse; margin: 8px 0; } .md th, .md td { border: 1px solid var(--color-line-strong); padding: 4px 8px; }
