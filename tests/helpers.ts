@@ -6,10 +6,11 @@ import { join } from 'path'
 export interface Ctx { app: ElectronApplication; page: Page; dataDir: string; projectPath: string; close(): Promise<void> }
 
 /** Launch orc against the fake SDK with an optional seeded project and chats. */
-export async function launch(opts: { project?: boolean; chats?: { id: string; title: string; pinned?: boolean }[]; live?: boolean } = {}): Promise<Ctx> {
+export async function launch(opts: { project?: boolean; chats?: { id: string; title: string; pinned?: boolean }[]; settings?: Record<string, unknown>; live?: boolean } = {}): Promise<Ctx> {
   const dataDir = mkdtempSync(join(tmpdir(), 'orc-'))
   const projectPath = mkdtempSync(join(tmpdir(), 'orc-project-'))
   writeFileSync(join(projectPath, 'hello.txt'), 'hello from the fixture project\n')
+  if (opts.settings) writeFileSync(join(dataDir, 'settings.json'), JSON.stringify(opts.settings))
   if (opts.project !== false) {
     writeFileSync(join(dataDir, 'projects.json'), JSON.stringify([{ id: 'p1', path: projectPath, name: 'Fixture Project', isPinned: false, createdAt: 1 }]))
     writeFileSync(join(dataDir, 'sessions.json'), JSON.stringify((opts.chats ?? []).map((c, i) => ({

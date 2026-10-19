@@ -120,11 +120,12 @@ export class Engine {
       this.apply(id, e, { op: 'update', id: askId, partial: { answer } })
       this.setTool(id, e, pending.ask.toolUseId, denied ? 'denied' : 'running')
       // The codec switched mode on the user's behalf; keep the session in step so the composer says so and asks stop.
+      // Re-sending the mode the CLI already switched to is idempotent and keeps the codec's own record of it current.
       if (answer.type === 'plan' && !denied) { // plain approve only leaves plan mode; the mode the chat had before stays
-        if (answer.decision === 'approve-edits') this.setApprovalMode(id, 'accept-edits', false)
-        else if (this.session(id).approvalMode === 'read-only') this.setApprovalMode(id, 'ask', false)
+        if (answer.decision === 'approve-edits') this.setApprovalMode(id, 'accept-edits')
+        else if (this.session(id).approvalMode === 'read-only') this.setApprovalMode(id, 'ask')
       }
-      if (answer.type === 'permission' && answer.decision === 'always' && pending.ask.type === 'permission' && pending.ask.alwaysMode) this.setApprovalMode(id, pending.ask.alwaysMode, false)
+      if (answer.type === 'permission' && answer.decision === 'always' && pending.ask.type === 'permission' && pending.ask.alwaysMode) this.setApprovalMode(id, pending.ask.alwaysMode)
       if (e.asks.size === 0) this.resume(id, e)
       return
     }

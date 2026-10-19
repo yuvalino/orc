@@ -2,9 +2,10 @@ import { expect, test } from '@playwright/test'
 import { launch, send, shot } from './helpers'
 
 test('empty shell matches the Codex layout', async () => {
-  const c = await launch({ project: false })
+  const c = await launch({ project: false, settings: { models: [{ value: 'default', displayName: 'Default (recommended)', effortLevels: ['low', 'medium', 'high'] }] } })
   const { page } = c
   await expect(page.getByText('Start a conversation')).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Default/ })).toBeVisible() // the cached model list makes the picker usable before any chat runs
   await expect(page.getByText('No projects yet')).toBeVisible()
   await expect(page.getByText('New chat')).toBeVisible()
   await expect(page.getByText('No project', { exact: true })).toBeVisible()

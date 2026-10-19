@@ -13,11 +13,14 @@ test('questions, plans, denials, and asks pending in a background chat', async (
   await expect(page.getByText(/^Answered: Spaces/)).toBeVisible()
 
   await page.getByRole('button', { name: 'New chat' }).click()
+  await page.getByText('Ask for approval').click()
+  await page.getByText('Auto mode').click()
   await send(page, 'plan something')
   await expect(page.getByText('Review plan')).toBeVisible()
   await shot(page, 'asks-plan')
   await page.getByRole('button', { name: 'Approve', exact: true }).click()
   await expect(page.getByText('Plan approved', { exact: true })).toBeVisible()
+  await expect(page.getByText('Auto mode')).toBeVisible() // approving a plan keeps the chat's own mode
   // The approved plan continues into a Write that needs permission; deny it.
   await page.getByRole('button', { name: 'Deny' }).click()
   await expect(page.getByText(/^Denied/)).toBeVisible()
