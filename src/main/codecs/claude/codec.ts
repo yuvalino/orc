@@ -34,7 +34,9 @@ function toAsk(toolName: string, input: Record<string, unknown>, opts: { title?:
   const id = crypto.randomUUID(), toolUseId = opts.toolUseID
   if (toolName === 'AskUserQuestion') return { type: 'question', id, toolUseId, questions: input.questions as Ask extends { questions: infer Q } ? Q : never }
   if (toolName === 'ExitPlanMode') return { type: 'plan', id, toolUseId, plan: String(input.plan ?? '') }
-  return { type: 'permission', id, toolUseId, toolName, input, title: opts.title, description: opts.description, canAlwaysAllow: !!opts.suggestions?.length && !opts.suppressAlwaysAllowRule }
+  const setMode = opts.suggestions?.find((s) => s.type === 'setMode')?.mode
+  const alwaysMode = setMode && (Object.keys(MODES) as ApprovalMode[]).find((k) => MODES[k] === setMode)
+  return { type: 'permission', id, toolUseId, toolName, input, title: opts.title, description: opts.description, canAlwaysAllow: !!opts.suggestions?.length && !opts.suppressAlwaysAllowRule, alwaysMode }
 }
 
 function toResult(answer: AskAnswer, input: Record<string, unknown>, suggestions: PermissionUpdate[] = []): PermissionResult {
@@ -125,10 +127,11 @@ export class ClaudeCodec implements Codec {
       if (i.kind !== 'tool') return i
       const bg = /^Command running in background with ID: (\w+)\. Output is being written to: (\S+?)\.?(\s|$)/.exec(i.result?.text ?? '')
       if (i.name === 'Agent' || i.name === 'Task' || bg) {
-        const done = i.status === 'done', startedAt = st.times[i.toolUseId] ?? 0, endedAt = st.times[`${i.toolUseId}:end`] ?? (done ? startedAt : undefined)
+        const placeholder = !!bg || i.result?.text?.startsWith('Async agent') === true // the launch acknowledgement, not an outcome
+        const done = i.status === 'done' && !(placeholder && !i.task?.status), startedAt = st.times[i.toolUseId] ?? 0, endedAt = st.times[`${i.toolUseId}:end`] ?? (done ? startedAt : undefined)
         const status = done ? 'done' : i.status === 'error' ? 'error' : 'interrupted'
         const text = bg ? await readFile(bg[2], 'utf-8').catch(() => '') : '' // the command's output file, still on disk
-        return { ...i, status, result: text && i.result ? { ...i.result, text: text.slice(-64_000) } : i.result, task: { ...i.task, id: bg?.[1] ?? agentIds[i.toolUseId] ?? i.toolUseId, status: done ? 'completed' : status === 'error' ? 'failed' : 'stopped', background: !!bg || i.result?.text?.startsWith('Async agent') === true, startedAt, endedAt, ...(i.task?.status && i.task.status !== 'running' ? { status: i.task.status } : {}) } }
+        return { ...i, status, result: text && i.result ? { ...i.result, text: text.slice(-64_000) } : i.result, task: { ...i.task, id: bg?.[1] ?? agentIds[i.toolUseId] ?? i.toolUseId, status: done ? 'completed' : status === 'error' ? 'failed' : 'stopped', background: placeholder, startedAt, endedAt, ...(i.task?.status && i.task.status !== 'running' ? { status: i.task.status } : {}) } }
       }
       return i.status === 'running' ? { ...i, status: 'interrupted' } : i
     }))

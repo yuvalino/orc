@@ -26,8 +26,9 @@ test('tool calls collapse under "Worked for", edits ask for permission', async (
   await expect(page.getByText('notes.md').first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Allow always' })).toBeVisible()
   await shot(page, 'tools-permission')
-  await page.getByRole('button', { name: 'Allow', exact: true }).click()
-  await expect(page.getByText('Allowed', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Allow always' }).click()
+  await expect(page.getByText('Allowed (always for this session)')).toBeVisible()
+  await expect(page.getByText('Accept edits')).toBeVisible() // the codec switched mode; the composer says so
   await expect(page.getByText(/^Wrote .*notes\.md/)).toBeVisible()
   await expect(page.getByText('Done', { exact: true })).toBeVisible()
   await shot(page, 'tools-after-allow')

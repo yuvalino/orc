@@ -32,9 +32,9 @@ export function Composer() {
     el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 220) + 'px'
   }, [draft])
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && running) interrupt() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && running && !useStore.getState().palette) interrupt() } // Esc closes the palette first
+    window.addEventListener('keydown', onKey, true) // capture: runs before the palette closes itself
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [running])
 
   const submit = async () => {

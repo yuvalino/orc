@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Ellipsis, Folder, Loader2, Plus, Search, SquarePen } from 'lucide-react'
 import type { Project, Session } from '@shared/types'
 import { Menu } from '../lib/Menu'
@@ -70,15 +71,20 @@ function ProjectRow({ p, chats }: { p: Project; chats: Session[] }) {
 
 function ChatRow({ s, nested }: { s: Session; nested?: boolean }) {
   const { activeId, select, update } = useStore()
-  const rename = () => { const t = prompt('Rename chat', sessionTitle(s)); if (t) update(s.id, { title: t }) }
+  const [renaming, setRenaming] = useState(false) // window.prompt() is unavailable in Electron, so the title is edited in place
+  const commit = (t: string) => { setRenaming(false); if (t.trim() && t.trim() !== sessionTitle(s)) update(s.id, { title: t.trim() }) }
   return (
     <div onClick={() => select(s.id)} className={`group flex cursor-pointer items-center gap-2 rounded-md py-[3px] pr-1 text-[14px] ${nested ? 'pl-[38px]' : 'pl-2.5'} ${activeId === s.id ? 'bg-bg-active text-fg-bright' : 'text-fg-sub hover:bg-bg-hover hover:text-fg-bright'}`}>
-      <span className="truncate">{sessionTitle(s)}</span>
+      {renaming
+        ? <input autoFocus defaultValue={sessionTitle(s)} aria-label="Chat title" onClick={(e) => e.stopPropagation()} onBlur={(e) => commit(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') commit(e.currentTarget.value); if (e.key === 'Escape') setRenaming(false) }}
+            className="min-w-0 flex-1 rounded bg-bg px-1 text-[14px] text-fg-bright outline-none" />
+        : <span className="truncate">{sessionTitle(s)}</span>}
       <Indicator ids={[s.id]} />
       <Menu align="right" className="ml-auto opacity-0 group-hover:opacity-100"
-        trigger={<button className="rounded p-0.5 text-fg-3 hover:text-fg"><Ellipsis size={14} /></button>}
+        trigger={<button title="Chat menu" className="rounded p-0.5 text-fg-3 hover:text-fg"><Ellipsis size={14} /></button>}
         items={[
-          { label: 'Rename', onSelect: rename },
+          { label: 'Rename', onSelect: () => setRenaming(true) },
           { label: s.isPinned ? 'Unpin' : 'Pin', onSelect: () => update(s.id, { isPinned: !s.isPinned }) },
           { label: 'Delete', danger: true, onSelect: () => confirm(`Delete "${sessionTitle(s)}"?`) && window.orc.sessions.remove(s.id) }
         ]} />

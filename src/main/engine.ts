@@ -1,5 +1,5 @@
 import { homedir } from 'os'
-import type { ApprovalMode, AskAnswer, Item, Patch, RuntimeState, Session, SessionStatus, ToolStatus } from '@shared/types'
+import type { ApprovalMode, Ask, AskAnswer, Item, Patch, RuntimeState, Session, SessionStatus, ToolStatus } from '@shared/types'
 import { applyPatch } from '@shared/types'
 import type { PushEvents } from '@shared/api'
 import type { CodecSession } from './codecs/types'
@@ -14,7 +14,7 @@ interface Entry {
   hasTranscript: boolean
   status: SessionStatus
   live: CodecSession | null
-  asks: Map<string, { resolve: (a: AskAnswer) => void; toolUseId: string }>
+  asks: Map<string, { resolve: (a: AskAnswer) => void; ask: Ask }>
   idleTimer?: ReturnType<typeof setTimeout>
   stopping?: boolean
   gen: number // which codec process the sink callbacks belong to; a late 'closed' from an old one is ignored
@@ -92,7 +92,7 @@ export class Engine {
         status: (st) => { if (gen === e.gen) this.setStatus(s.id, e, st) },
         ask: (ask, signal) => new Promise<AskAnswer>((resolve) => {
           if (gen !== e.gen) return resolve({ type: 'permission', decision: 'deny', message: 'Session closed' })
-          e.asks.set(ask.id, { resolve, toolUseId: ask.toolUseId })
+          e.asks.set(ask.id, { resolve, ask })
           this.setTool(s.id, e, ask.toolUseId, 'awaiting_approval')
           this.apply(s.id, e, { op: 'upsert', item: { kind: 'ask', id: ask.id, ask } })
           if (e.status.state !== 'requires_action') e.resumeState = e.status.state
@@ -102,6 +102,7 @@ export class Engine {
             this.apply(s.id, e, { op: 'update', id: ask.id, partial: { cancelled: true } })
             this.setTool(s.id, e, ask.toolUseId, 'interrupted')
             resolve({ type: 'permission', decision: 'deny', message: 'Interrupted' })
+            if (e.asks.size === 0) this.resume(s.id, e)
           })
         })
       }
@@ -116,11 +117,20 @@ export class Engine {
       pending.resolve(answer)
       const denied = (answer.type === 'permission' && answer.decision === 'deny') || (answer.type === 'plan' && answer.decision === 'reject')
       this.apply(id, e, { op: 'update', id: askId, partial: { answer } })
-      this.setTool(id, e, pending.toolUseId, denied ? 'denied' : 'running')
+      this.setTool(id, e, pending.ask.toolUseId, denied ? 'denied' : 'running')
+      // The codec switched mode on the user's behalf; keep the session in step so the composer says so and asks stop.
       if (answer.type === 'plan' && !denied) this.setApprovalMode(id, answer.decision === 'approve-edits' ? 'accept-edits' : 'ask', false)
-      if (e.asks.size === 0) { const state = e.live ? e.resumeState ?? 'running' : 'closed'; e.resumeState = undefined; this.setStatus(id, e, { state }) }
+      if (answer.type === 'permission' && answer.decision === 'always' && pending.ask.type === 'permission' && pending.ask.alwaysMode) this.setApprovalMode(id, pending.ask.alwaysMode, false)
+      if (e.asks.size === 0) this.resume(id, e)
       return
     }
+  }
+
+  /** Every ask answered: back to whatever the asks interrupted. */
+  private resume(id: string, e: Entry): void {
+    const state = e.live ? e.resumeState ?? 'running' : 'closed'
+    e.resumeState = undefined
+    this.setStatus(id, e, { state })
   }
 
   async interrupt(id: string): Promise<void> {
@@ -199,7 +209,7 @@ export class Engine {
       a.resolve({ type: 'permission', decision: 'deny', message: 'Session closed' })
       this.apply(id, e, { op: 'update', id: askId, partial: { cancelled: true } })
     }
-    e.asks.clear(); e.resumeState = undefined
+    e.asks.clear(); e.resumeState = undefined; e.stopping = false
     for (const i of e.items) {
       if (i.kind !== 'tool' || (i.status !== 'running' && i.status !== 'awaiting_approval')) continue
       this.apply(id, e, { op: 'update', id: i.id, partial: { status: 'interrupted', ...(i.task?.status === 'running' ? { task: { ...i.task, status: 'stopped', endedAt: Date.now() } } : {}) } })

@@ -53,7 +53,7 @@ export interface Question {
 }
 
 export type Ask =
-  | { type: 'permission'; id: string; toolUseId: string; toolName: string; input: unknown; title?: string; description?: string; canAlwaysAllow: boolean }
+  | { type: 'permission'; id: string; toolUseId: string; toolName: string; input: unknown; title?: string; description?: string; canAlwaysAllow: boolean; alwaysMode?: ApprovalMode } // alwaysMode: "always" switches the session to this mode
   | { type: 'question'; id: string; toolUseId: string; questions: Question[] }
   | { type: 'plan'; id: string; toolUseId: string; plan: string }
 
