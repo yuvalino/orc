@@ -39,5 +39,16 @@ test('saved transcripts reload, pins, rename, and interrupt', async () => {
   await expect(page.getByText('Stopped')).toBeVisible()
   await expect(page.locator('textarea')).toBeEnabled()
   await shot(page, 'lifecycle-stopped')
+
+  // Deleting the open chat returns to a fresh composer; removing a project takes its chats with it.
+  page.on('dialog', (d) => d.accept())
+  const renamed = page.locator('div.group', { hasText: 'Renamed chat' }).first()
+  await renamed.hover(); await renamed.getByTitle('Chat menu').click(); await page.getByText('Delete').click()
+  await expect(page.getByText('Start a conversation')).toBeVisible()
+  await expect(page.getByText('Renamed chat')).toHaveCount(0)
+  const proj = page.locator('div.group', { hasText: 'Fixture Project' }).first()
+  await proj.hover(); await proj.locator('button').last().click(); await page.getByText('Remove project').click()
+  await expect(page.getByText('No projects yet')).toBeVisible()
+  await expect(page.getByText('Recorded chat')).toHaveCount(0)
   await c.close()
 })

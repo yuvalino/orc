@@ -11,7 +11,8 @@ export function Palette() {
   const [cursor, setCursor] = useState(0)
   const [files, setFiles] = useState<string[]>([])
   const input = useRef<HTMLInputElement>(null)
-  const projectId = sessions.find((s) => s.id === activeId)?.projectId ?? draftProjectId
+  const active = sessions.find((s) => s.id === activeId)
+  const projectId = active ? active.projectId : draftProjectId // an open no-project chat has no files to search, whatever the draft says
 
   useEffect(() => { setQ(''); setCursor(0); setFiles([]); if (palette) setTimeout(() => input.current?.focus()) }, [palette])
   useEffect(() => {
