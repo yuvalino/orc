@@ -1,6 +1,6 @@
 #!/bin/sh
 # Push a locally built orc-server bundle to a host for development: scripts/dev-remote.sh <host> [target]
-# Phase 3c installs it automatically; until then this is how a host gets ~/.orc/<version>/.
+# The app installs released bundles itself on first connect; this puts an unreleased build into ~/.orc/<version>/ instead.
 set -e
 host=$1
 [ -n "$host" ] || { echo "usage: scripts/dev-remote.sh <host> [darwin-arm64|darwin-x64|linux-x64|linux-arm64]" >&2; exit 2; }

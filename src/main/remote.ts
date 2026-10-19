@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process'
+import { readFileSync } from 'fs'
 import { hostname, tmpdir, userInfo } from 'os'
 import { join } from 'path'
 import { createInterface } from 'readline'
@@ -6,14 +7,34 @@ import type { TransportState } from '@shared/api'
 import { decode, encode, type ClientFrame, type ServerFrame } from '@shared/protocol'
 import type { Push } from '../server/engine'
 import { Askpass } from './askpass'
+import manifest from '../../bundles.json'
+import bootstrap from './bootstrap.sh?raw'
 import { token } from './signin'
 
 /** Hints for the ssh failures everyone hits. */
 function explain(detail: string, code: number | null): string {
   if (/Permission denied/.test(detail)) return `${detail.trim()}\nThe host did not accept your key or password.`
   if (/Host key verification failed/.test(detail)) return `${detail.trim()}\nThe host's key changed; check with its admin, then remove the old entry from ~/.ssh/known_hosts.`
-  if (code === 127 || /No such file|not found/.test(detail)) return `orc-server is not installed on the host — push it with scripts/dev-remote.sh <host>.`
   return detail.trim() || `ssh exited with code ${code}`
+}
+const INSTALL_FAILED: Record<string, string> = {
+  'no-curl': 'The host has no curl, which the one-time install needs.',
+  download: 'The host could not download the orc server bundle; it needs internet access to github.com.',
+  sha256: 'The downloaded orc server bundle did not match its checksum.',
+  unpacking: 'The orc server bundle could not be unpacked on the host.',
+  'unsupported-host': 'orc-server runs on macOS and glibc ≥ 2.28 Linux (x64/arm64); this host is something else.'
+}
+
+/**
+ * The remote command: a bootstrap that installs ~/.orc/<version>/ on first use and then becomes the server. It is
+ * base64-encoded so the user's login shell (whatever it is) hands it to `sh` untouched; the bundle table is the repo's
+ * bundles.json, compiled in (ORC_BUNDLES_JSON points tests at another one).
+ */
+function remoteCommand(): string {
+  const { bundles } = (process.env.ORC_BUNDLES_JSON ? JSON.parse(readFileSync(process.env.ORC_BUNDLES_JSON, 'utf-8')) : manifest) as { bundles: Record<string, { url: string; sha256: string }> }
+  const table = Object.entries(bundles).map(([t, b]) => `${t} ${b.url} ${b.sha256}`).join('\n')
+  const script = bootstrap.replaceAll('__VERSION__', () => __ORC_VERSION__).replaceAll('__BUNDLES__', () => table)
+  return `sh -c 'eval "$(printf %s ${Buffer.from(script).toString('base64')} | base64 --decode)"'`
 }
 
 /**
@@ -42,12 +63,12 @@ export class Remote {
   connect(takeover = false): void {
     clearTimeout(this.retry)
     this.stop()
-    this.set({ phase: 'connecting', error: undefined, holder: undefined, prompt: undefined })
+    this.set({ phase: 'connecting', error: undefined, holder: undefined, prompt: undefined, install: undefined })
     this.stderr = ''; this.noise = []
     const proc = spawn('ssh', [
       '-T', '-o', 'StrictHostKeyChecking=ask', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
       '-o', 'ControlMaster=auto', '-o', `ControlPath=${this.control}`, '-o', 'ControlPersist=60',
-      this.host, `exec ~/.orc/${__ORC_VERSION__}/orc-server --stdio`
+      this.host, remoteCommand()
     ], { env: { ...process.env, ...this.askpass.env } })
     this.proc = proc
     proc.stderr!.on('data', (d) => { this.stderr += d })
@@ -86,8 +107,12 @@ export class Remote {
     } else if ('id' in f) {
       const p = this.pending.get(f.id); this.pending.delete(f.id)
       if (p) f.error ? p.rej(new Error(f.error)) : p.res(f.result ?? null)
+    } else if ('install' in f) {
+      this.set({ phase: 'installing', install: f.install.phase })
     } else if ('error' in f) {
-      this.fail(f.error === 'not-logged-in' ? `Claude isn't signed in on ${this.host}. Sign in for remote hosts (⌘K → Remote sign-in…), or run: ssh -t ${this.host} ${f.claude ?? 'claude'} auth login` : f.error)
+      if (f.error === 'not-logged-in') this.fail(`Claude isn't signed in on ${this.host}. Sign in for remote hosts (⌘K → Remote sign-in…), or run: ssh -t ${this.host} ${f.claude ?? 'claude'} auth login`)
+      else if (f.error === 'install-failed') this.fail(INSTALL_FAILED[f.reason ?? ''] ?? `Installing orc-server on ${this.host} failed (${f.reason}).`)
+      else this.fail(f.error)
     }
   }
 

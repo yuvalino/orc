@@ -1,0 +1,21 @@
+{
+  "version": "0.1.0",
+  "bundles": {
+    "darwin-arm64": {
+      "url": "https://github.com/yuvalino/orc/releases/download/v0.1.0/orc-server-darwin-arm64.tar.gz",
+      "sha256": "ba46dc883583162e9460ccb6b4ac742af8d834eb59a0b5b259fdae35d3c797e3"
+    },
+    "darwin-x64": {
+      "url": "https://github.com/yuvalino/orc/releases/download/v0.1.0/orc-server-darwin-x64.tar.gz",
+      "sha256": ""
+    },
+    "linux-x64": {
+      "url": "https://github.com/yuvalino/orc/releases/download/v0.1.0/orc-server-linux-x64.tar.gz",
+      "sha256": ""
+    },
+    "linux-arm64": {
+      "url": "https://github.com/yuvalino/orc/releases/download/v0.1.0/orc-server-linux-arm64.tar.gz",
+      "sha256": ""
+    }
+  }
+}

@@ -1,4 +1,5 @@
-import { execFile } from 'child_process'
+import { execFile, execFileSync } from 'child_process'
+import { readdirSync, rmSync, statSync } from 'fs'
 import { createRequire } from 'module'
 import { hostname } from 'os'
 import { dirname, join } from 'path'
@@ -45,6 +46,24 @@ process.on('SIGTERM', () => { // a take-over by another instance, or a plain kil
 })
 setInterval(() => { if (Date.now() - last > 45_000) exit() }, 5_000).unref() // a half-open link the client never closes
 
+/**
+ * Old installs under ~/.orc: keep the two newest versions and any a running server executes from, drop staging dirs
+ * older than a day. Done by the server after it holds the lock, never by the installer, so nothing is pulled from under a live one.
+ */
+function prune(): void {
+  if (!isSea) return
+  const root = dirname(dirname(process.execPath))
+  const num = (v: string) => v.split('.').map((x) => parseInt(x, 10) || 0)
+  const newer = (a: string, b: string) => { const x = num(a), y = num(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return (y[i] ?? 0) - (x[i] ?? 0); return 0 }
+  let ps = ''; try { ps = execFileSync('ps', ['-axo', 'args='], { encoding: 'utf-8' }) } catch { return }
+  try {
+    const entries = readdirSync(root)
+    const versions = entries.filter((e) => /^\d+\.\d+\.\d+/.test(e)).sort(newer)
+    for (const v of versions.slice(2)) if (!ps.includes(`${join(root, v)}/`)) rmSync(join(root, v), { recursive: true, force: true })
+    for (const e of entries) if (e.startsWith('.tmp.') && Date.now() - statSync(join(root, e)).mtimeMs > 86_400_000) rmSync(join(root, e), { recursive: true, force: true })
+  } catch { /* best effort */ }
+}
+
 /** Without a forwarded token the host's own Claude login must exist; the SDK's binary answers that. */
 async function loggedIn(): Promise<{ ok: boolean; claude: string }> {
   const claude = claudeBinary() ?? (() => { try { return createRequire(__filename).resolve(`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude`) } catch { return 'claude' } })()
@@ -59,6 +78,7 @@ async function hello(h: Hello): Promise<void> {
   else { const l = await loggedIn(); if (!l.ok) { write({ error: 'not-logged-in', claude: l.claude }); return } }
   if (lock.acquire('server', client)) {
     ready = true
+    prune()
     engine.hydrateTitles()
     write({ ready: { version: __ORC_VERSION__, host: hostname(), dataDir: dataDir(), now: Date.now() } })
   } else {

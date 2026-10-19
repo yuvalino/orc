@@ -13,10 +13,11 @@ export interface PushEvents {
 export interface TransportState {
   kind: 'local' | 'remote'
   host?: string
-  phase: 'connecting' | 'starting' | 'busy' | 'ready' | 'disconnected' | 'error' | 'taken-over' | 'prompt'
+  phase: 'connecting' | 'starting' | 'busy' | 'ready' | 'disconnected' | 'error' | 'taken-over' | 'prompt' | 'installing'
   holder?: { client: { host: string; user: string }; since: number; kind: 'local' | 'server' } // phase busy
   by?: { host: string; user: string } // phase taken-over
   prompt?: string // phase prompt: what ssh is asking (password, passphrase, 2FA, host key)
+  install?: 'downloading' | 'verifying' | 'unpacking' // phase installing: the first connect puts orc-server on the host
   error?: string
   clockOffset: number // server clock minus ours
 }

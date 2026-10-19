@@ -76,4 +76,6 @@ for (const t of targets) {
   bundles[t] = { url: `https://github.com/yuvalino/orc/releases/download/v${pkg.version}/orc-server-${t}.tar.gz`, sha256: sha256(tgz) }
   console.log('built', tgz)
 }
-writeFileSync(join(out, 'bundles.json'), JSON.stringify({ version: pkg.version, node: NODE, bundles }, null, 2))
+// The app ships bundles.json: the built targets' entries are merged into it (a release builds all four).
+const manifest = JSON.parse(readFileSync('bundles.json', 'utf-8'))
+writeFileSync('bundles.json', JSON.stringify({ version: pkg.version, bundles: { ...manifest.bundles, ...bundles } }, null, 2) + '\n')
