@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, Check, ChevronRight, Copy, FileText, Folder, Globe, Hand, Loader2, Pencil, Search, Terminal, Wrench, X } from 'lucide-react'
+import { Bot, Check, ChevronRight, Copy, FileText, Folder, Globe, Hand, ListChecks, Loader2, Pencil, Search, Terminal, Wrench, X } from 'lucide-react'
 import type { Item } from '@shared/types'
 import { AskCard } from './asks'
 import { Markdown } from './Markdown'
@@ -19,7 +19,10 @@ function groupTurns(items: Item[]): Turn[] {
     if (it.kind === 'user') { flush(); t.user = it }
     else if (it.kind === 'turn_end') { t.end = it; flush() }
     else if ((it.kind === 'text' && !it.parent) || it.kind === 'note') t.final.push(it) // replies and errors stay visible outside the fold
-    else { if (it.kind === 'tool' && HIDDEN_TOOLS.has(it.name)) continue; t.work.push(...t.final); t.final = []; t.work.push(it) }
+    else {
+      if ((it.kind === 'tool' && HIDDEN_TOOLS.has(it.name)) || (it.kind === 'thinking' && !it.text && !it.streaming)) continue
+      t.work.push(...t.final); t.final = []; t.work.push(it)
+    }
   }
   flush()
   return turns
@@ -117,40 +120,58 @@ function WorkItem({ item }: { item: Item }) {
   }
 }
 
+type Hunk = { lines: string[] }
+/** Claude Code's `tool_use_result` payloads we draw: Edit/Write patches, Grep/Glob matches, Bash file diffs. */
+type ResultData = { structuredPatch?: Hunk[]; filenames?: string[]; numFiles?: number; bashEditDiff?: { files: { filePath: string; hunks: Hunk[] }[] } }
+
+const file = (p?: string) => (p ?? '').split('/').slice(-2).join('/')
+
 function toolLabel(t: Tool): { icon: typeof FileText; text: string } {
   const i = (t.input ?? {}) as Record<string, string>
+  const d = (t.result?.data ?? {}) as ResultData
+  const done = t.status === 'done' || t.status === 'error'
+  const v = (now: string, past: string) => (done ? past : now)
   const short = (s?: string) => (s ?? '').split('\n')[0].slice(0, 80)
-  const file = (p?: string) => (p ?? '').split('/').slice(-2).join('/')
+  const mcp = /^mcp__(.+?)__(.+)$/.exec(t.name)
   switch (t.name) {
     case 'Read': return { icon: FileText, text: `Read ${file(i.file_path)}` }
-    case 'Edit': case 'MultiEdit': return { icon: Pencil, text: `Edited ${file(i.file_path)}` }
-    case 'Write': return { icon: Pencil, text: `Wrote ${file(i.file_path)}` }
-    case 'Bash': return { icon: Terminal, text: `Ran ${short(i.command)}` }
-    case 'Grep': case 'Glob': return { icon: Search, text: `Searched ${short(i.pattern)}` }
+    case 'Edit': case 'MultiEdit': return { icon: Pencil, text: `${v('Edit', 'Edited')} ${file(i.file_path)}` }
+    case 'Write': return { icon: Pencil, text: `${v('Write', 'Wrote')} ${file(i.file_path)}` }
+    case 'Bash': return { icon: Terminal, text: `${v('Run', 'Ran')} ${short(i.command)}` }
+    case 'Grep': case 'Glob': return { icon: Search, text: `${v('Search', 'Searched')} ${short(i.pattern)}${d.numFiles ? ` · ${d.numFiles} files` : ''}` }
     case 'WebFetch': case 'WebSearch': return { icon: Globe, text: short(i.url ?? i.query) }
     case 'Agent': case 'Task': return { icon: Bot, text: `Agent: ${short(i.description)}` }
-    default: return { icon: Wrench, text: t.name }
+    case 'TaskCreate': return { icon: ListChecks, text: `Task: ${short(i.subject)}` }
+    case 'TaskUpdate': return { icon: ListChecks, text: `Task #${i.taskId} → ${i.status ?? 'updated'}` }
+    default: return { icon: Wrench, text: mcp ? `${mcp[2]} (${mcp[1]})` : t.name }
   }
 }
 
 function ToolRow({ tool }: { tool: Tool }) {
   const { icon: Icon, text } = toolLabel(tool)
   const i = tool.input as Record<string, string>
+  const d = (tool.result?.data ?? {}) as ResultData
   const Status = { running: <Loader2 size={13} className="animate-spin text-fg-3" />, awaiting_approval: <Hand size={13} className="text-warn" />, done: <Check size={13} className="text-ok" />, error: <X size={13} className="text-bad" />, denied: <X size={13} className="text-fg-3" />, interrupted: <X size={13} className="text-fg-3" /> }[tool.status]
-  const diff = (tool.name === 'Edit' || tool.name === 'Write') && (i.old_string || i.new_string || i.content)
+  const diffLines = d.structuredPatch ? d.structuredPatch.flatMap((h) => h.lines)
+    : tool.name === 'Edit' || tool.name === 'MultiEdit' ? [...(i.old_string ?? '').split('\n').map((l) => '-' + l), ...(i.new_string ?? '').split('\n').map((l) => '+' + l)]
+    : tool.name === 'Write' ? (i.content ?? '').split('\n').map((l) => '+' + l) : null
+  const files = d.filenames ?? []
+  const rich = !!(diffLines || files.length || d.bashEditDiff?.files.length) // structured body replaces the raw result text
   return (
     <Collapsible head={<><Icon size={14} className="shrink-0 text-fg-2" /><span className="truncate font-mono text-[12.5px]">{text}</span><span className="ml-auto">{Status}</span></>}>
-      {diff ? <Diff before={i.old_string ?? ''} after={i.new_string ?? i.content ?? ''} /> : null}
-      {tool.result?.text && <pre className={`max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[12px] ${tool.result.isError ? 'text-bad' : 'text-fg-2'}`}>{tool.result.text.slice(0, 4000)}</pre>}
-      {!diff && !tool.result && <pre className="font-mono text-[12px] text-fg-2">{JSON.stringify(tool.input, null, 2)}</pre>}
+      {diffLines && <Diff lines={diffLines} />}
+      {files.length > 0 && <pre className="max-h-64 overflow-auto font-mono text-[12px] text-fg-2">{files.join('\n')}</pre>}
+      {tool.result?.text && (!rich || tool.result.isError) && <pre className={`max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[12px] ${tool.result.isError ? 'text-bad' : 'text-fg-2'}`}>{tool.result.text.slice(0, 4000)}</pre>}
+      {d.bashEditDiff?.files.map((f) => <div key={f.filePath} className="mt-1.5"><div className="mb-1 font-mono text-[12px] text-fg-3">{file(f.filePath)}</div><Diff lines={f.hunks.flatMap((h) => h.lines)} /></div>)}
+      {!rich && !tool.result && <pre className="font-mono text-[12px] text-fg-2">{JSON.stringify(tool.input, null, 2)}</pre>}
     </Collapsible>
   )
 }
 
-const Diff = ({ before, after }: { before: string; after: string }) => (
+/** Unified-diff lines: first char is ' ', '+' or '-'. */
+const Diff = ({ lines }: { lines: string[] }) => (
   <pre className="max-h-64 overflow-auto rounded-md bg-bg p-2 font-mono text-[12px] leading-5">
-    {before.split('\n').map((l, i) => <div key={'b' + i} className="bg-bad/10 text-bad">- {l}</div>)}
-    {after.split('\n').map((l, i) => <div key={'a' + i} className="bg-ok/10 text-ok">+ {l}</div>)}
+    {lines.map((l, i) => <div key={i} className={l[0] === '+' ? 'bg-ok/10 text-ok' : l[0] === '-' ? 'bg-bad/10 text-bad' : 'text-fg-2'}>{l}</div>)}
   </pre>
 )
 

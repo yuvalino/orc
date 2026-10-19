@@ -33,7 +33,7 @@ export const useStore = create<State>((set, get) => ({
   projects: [], sessions: [], activeId: null, draftProjectId: null, transcripts: {}, status: {}, unread: {}, models: [], account: null, draft: '', palette: null,
 
   init() {
-    api().projects.list().then((projects) => set({ projects }))
+    api().projects.list().then((projects) => set((s) => ({ projects, draftProjectId: s.draftProjectId ?? projects[0]?.id ?? null }))) // a fresh chat starts in a project when one exists
     api().sessions.list().then((sessions) => set({ sessions }))
     api().on('projects:changed', (projects) => set({ projects }))
     api().on('sessions:changed', (sessions) => set({ sessions }))

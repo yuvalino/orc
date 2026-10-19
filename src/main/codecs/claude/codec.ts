@@ -66,11 +66,13 @@ export class ClaudeCodec implements Codec {
       model: p.model,
       includePartialMessages: true,
       tools: { type: 'preset', preset: 'claude_code' },
+      allowedTools: ['Grep', 'Glob', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'], // search and checklist tools are omitted unless listed; all side-effect free
       systemPrompt: { type: 'preset', preset: 'claude_code' },
       settingSources: ['user', 'project', 'local'],
       env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: `orc/${app.getVersion()}` },
       pathToClaudeCodeExecutable: bundledBinary(),
       perTaskStopAffordance: true,
+      settings: { bashEditDiffEnabled: true }, // Bash results carry a diff of the files the command changed
       canUseTool: async (toolName, toolInput, opts) => toResult(await sink.ask(toAsk(toolName, toolInput, opts), opts.signal), toolInput, opts.suggestions)
     } })
 
