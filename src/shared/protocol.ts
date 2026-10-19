@@ -1,7 +1,7 @@
 import type { PushEvents } from './api'
 
 /** NDJSON frames between a client and `orc-server --stdio`; one per line, server stdout only ever carries these. */
-export interface Hello { version: string; client: { host: string; user: string }; takeover: boolean; oauthToken?: string }
+export interface Hello { version: string; client: { host: string; user: string }; takeover: boolean; oauthToken?: string } // oauthToken: goes only into the SDK process's env on the host
 export interface Ready { version: string; host: string; dataDir: string; now: number }
 export interface Busy { holder: { client: { host: string; user: string }; since: number; kind: 'local' | 'server' } }
 export type ServerFrame =

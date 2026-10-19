@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import type { SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { SdkModule } from '../claude/sdk'
@@ -18,6 +18,8 @@ export function createFakeSdk(dir: string): SdkModule {
 
   const query: SdkModule['query'] = ({ prompt, options = {} }) => {
     const sessionId = (options.resume ?? options.sessionId ?? 'fake') as string
+    const tok = (options.env as Record<string, string> | undefined)?.CLAUDE_CODE_OAUTH_TOKEN
+    if (tok && options.cwd) writeFileSync(join(options.cwd, '.token-seen'), tok) // lets a spec check a forwarded token reached the SDK env
     const out: SDKMessage[] = []; let wake: (() => void) | null = null; let closed = false; let interrupted = false; let stopped = false
     const emit = (m: any) => { out.push({ ...m, session_id: sessionId }); wake?.(); wake = null }
     const result = (extra = {}) => emit({ type: 'result', subtype: 'success', is_error: false, duration_ms: 42, uuid: crypto.randomUUID(), ...extra })

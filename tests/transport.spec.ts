@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { execSync } from 'child_process'
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { launch, send, shot } from './helpers'
@@ -8,12 +8,16 @@ import { launch, send, shot } from './helpers'
 const electron = require('electron') as unknown as string
 const server = join(__dirname, '../out/main/orc-server.js')
 
-/** An `ssh` on PATH that ignores its arguments and runs orc-server locally — with a line of "profile noise" first, like a real host's shell would. */
-export function sshShim(dataDir: string, fail?: string): string {
+/**
+ * An `ssh` on PATH that ignores its arguments and runs orc-server locally — with a line of "profile noise" first, like a real host's shell would.
+ * `password` makes it ask through SSH_ASKPASS first, as ssh does; `env` is extra environment for the server.
+ */
+export function sshShim(dataDir: string, o: { fail?: string; password?: string; env?: string } = {}): string {
   const dir = mkdtempSync(join(tmpdir(), 'orc-ssh-'))
-  const body = fail
-    ? `#!/bin/sh\necho "${fail}" >&2\nexit 255\n`
-    : `#!/bin/sh\necho "Welcome to fakehost (motd)"\nexec env ELECTRON_RUN_AS_NODE=1 ORC_FAKE_SDK="${join(__dirname, 'fixtures')}" "${electron}" "${server}" --stdio --data-dir "${dataDir}"\n`
+  const ask = o.password ? `pw=$("$SSH_ASKPASS" "fakehost's password:") && [ "$pw" = "${o.password}" ] || { echo "Permission denied (password)." >&2; exit 255; }\n` : ''
+  const body = o.fail
+    ? `#!/bin/sh\necho "${o.fail}" >&2\nexit 255\n`
+    : `#!/bin/sh\n${ask}echo "Welcome to fakehost (motd)"\nexec env ELECTRON_RUN_AS_NODE=1 ORC_FAKE_SDK="${join(__dirname, 'fixtures')}" ${o.env ?? ''} "${electron}" "${server}" --stdio --data-dir "${dataDir}"\n`
   writeFileSync(join(dir, 'ssh'), body)
   chmodSync(join(dir, 'ssh'), 0o755)
   return dir
@@ -38,12 +42,59 @@ test('remote target over the stdio transport: chat, disconnect and reconnect, co
   await expect(page.getByText('Hello from Claude')).toHaveCount(0) // the fake SDK persists nothing it streamed
   await c.close()
 
-  const bad = await launch({ remote: 'fakehost', waitFor: 'none', env: { PATH: `${sshShim(dataDir, 'ssh: connect to host fakehost port 22: Connection refused')}:${process.env.PATH}` } })
+  const bad = await launch({ remote: 'fakehost', waitFor: 'none', env: { PATH: `${sshShim(dataDir, { fail: 'ssh: connect to host fakehost port 22: Connection refused' })}:${process.env.PATH}` } })
   await expect(bad.page.getByText('Could not connect')).toBeVisible()
   await expect(bad.page.getByText(/Connection refused/)).toBeVisible()
   await expect(bad.page.getByRole('button', { name: 'Retry' })).toBeVisible()
   await shot(bad.page, 'transport-error')
   await bad.close()
+})
+
+test('remote sign-in: ssh prompts answered in the window, the token reaches only the SDK, hosts without a login', async () => {
+  // ssh asks for a password: it shows in the window; a wrong answer fails like ssh does, the right one connects.
+  const dataDir = mkdtempSync(join(tmpdir(), 'orc-remote-data-'))
+  const path = `${sshShim(dataDir, { password: 'secret' })}:${process.env.PATH}`
+  const c = await launch({ remote: 'fakehost', dataDir, seed: true, waitFor: 'none', env: { PATH: path, ORC_OAUTH_TOKEN: 'sk-ant-oat01-test' } })
+  const { page } = c
+  await expect(page.getByText("fakehost's password:")).toBeVisible()
+  await shot(page, 'transport-prompt')
+  await page.getByLabel('Answer').fill('wrong')
+  await page.getByRole('button', { name: 'Continue' }).click()
+  await expect(page.getByText(/Permission denied/)).toBeVisible()
+  await page.getByRole('button', { name: 'Retry' }).click()
+  await page.getByLabel('Answer').fill('secret')
+  await page.getByLabel('Answer').press('Enter')
+  await expect(page.locator('textarea')).toBeVisible()
+  // The stored token travels in hello and lands in the SDK process's environment on the host, nowhere else.
+  await send(page, 'hello there')
+  await expect(page.getByText('Hello from Claude')).toBeVisible()
+  expect(readFileSync(join(c.projectPath, '.token-seen'), 'utf-8')).toBe('sk-ant-oat01-test')
+  expect(readFileSync(join(dataDir, 'lock'), 'utf-8')).not.toContain('oat01')
+  await c.close()
+
+  // No token and no login on the host: told how to fix it instead of a dead chat.
+  const out = await launch({ remote: 'fakehost', dataDir, waitFor: 'none', env: { PATH: `${sshShim(dataDir, { env: 'ORC_FAKE_LOGGED_OUT=1' })}:${process.env.PATH}`, ORC_OAUTH_TOKEN: '' } })
+  await expect(out.page.getByText(/isn't signed in on fakehost/)).toBeVisible()
+  await expect(out.page.getByText(/auth login/)).toBeVisible()
+  await shot(out.page, 'transport-not-logged-in')
+  await out.close()
+
+  // The sign-in palette stores and forgets the token.
+  const local = await launch({ env: { ORC_OAUTH_TOKEN: '' } })
+  await local.page.keyboard.press('Meta+k')
+  await local.page.getByText('Remote sign-in…').click()
+  await expect(local.page.getByText('Not signed in')).toBeVisible()
+  await local.page.getByPlaceholder(/setup-token/).fill('sk-ant-oat01-pasted')
+  await local.page.getByText('Save token for remote hosts').click()
+  await local.page.keyboard.press('Meta+k')
+  await local.page.getByText('Remote sign-in…').click()
+  await expect(local.page.getByText('Signed in for remote hosts')).toBeVisible()
+  await shot(local.page, 'signin')
+  await local.page.getByText('Forget token').click()
+  await local.page.keyboard.press('Meta+k')
+  await local.page.getByText('Remote sign-in…').click()
+  await expect(local.page.getByText('Not signed in')).toBeVisible()
+  await local.close()
 })
 
 test('remote UI: hosts from ~/.ssh/config, the remote folder picker', async () => {

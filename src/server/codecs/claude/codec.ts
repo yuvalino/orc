@@ -9,8 +9,9 @@ import { loadSdk } from './sdk'
 const MODES: Record<ApprovalMode, PermissionMode> = { 'read-only': 'plan', ask: 'default', auto: 'auto', 'accept-edits': 'acceptEdits', 'full-access': 'bypassPermissions' }
 
 /** Set once by whoever hosts the engine (desktop shell or orc-server): where the `claude` binary is when the SDK can't find its own, and what to call ourselves. */
-const cfg: { binaryPath?: string; version: string } = { version: '0.0.0' }
+const cfg: { binaryPath?: string; version: string; env?: Record<string, string> } = { version: '0.0.0' } // env: extra variables for the SDK process only (a forwarded token)
 export const configureClaude = (c: Partial<typeof cfg>): void => { Object.assign(cfg, c) }
+export const claudeBinary = (): string | undefined => cfg.binaryPath
 
 /** Unbounded async queue: the SDK's streaming-input iterable, fed one user message per send(). */
 function inputQueue<T>() {
@@ -69,7 +70,7 @@ export class ClaudeCodec implements Codec {
       allowedTools: ['Grep', 'Glob', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'], // search and checklist tools are omitted unless listed; all side-effect free
       systemPrompt: { type: 'preset', preset: 'claude_code' },
       settingSources: ['user', 'project', 'local'],
-      env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: `orc/${cfg.version}` },
+      env: { ...process.env, ...cfg.env, CLAUDE_AGENT_SDK_CLIENT_APP: `orc/${cfg.version}` },
       pathToClaudeCodeExecutable: cfg.binaryPath,
       perTaskStopAffordance: true,
       settings: { bashEditDiffEnabled: true }, // Bash results carry a diff of the files the command changed

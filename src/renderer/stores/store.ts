@@ -16,7 +16,7 @@ interface State {
   models: ModelOption[]
   account: Account | null
   draft: string
-  palette: null | 'chats' | 'files' | 'hosts' | 'folders'
+  palette: null | 'chats' | 'files' | 'hosts' | 'folders' | 'signin'
   panel: null | { toolUseId: string | null } // Subagents panel: closed, the lists, or one agent's thread
   defaults: Defaults
   transport: TransportState | null // null until the first state arrives

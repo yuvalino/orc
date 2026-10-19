@@ -1,8 +1,10 @@
+import { execFile } from 'child_process'
+import { createRequire } from 'module'
 import { hostname } from 'os'
 import { dirname, join } from 'path'
 import { createInterface } from 'readline'
 import { decode, encode, type ClientFrame, type Hello, type ServerFrame } from '@shared/protocol'
-import { configureClaude } from './codecs/claude/codec'
+import { claudeBinary, configureClaude } from './codecs/claude/codec'
 import { Engine, type Push } from './engine'
 import { createHandlers, methodTable } from './handlers'
 import { Lock } from './lock'
@@ -43,9 +45,18 @@ process.on('SIGTERM', () => { // a take-over by another instance, or a plain kil
 })
 setInterval(() => { if (Date.now() - last > 45_000) exit() }, 5_000).unref() // a half-open link the client never closes
 
+/** Without a forwarded token the host's own Claude login must exist; the SDK's binary answers that. */
+async function loggedIn(): Promise<{ ok: boolean; claude: string }> {
+  const claude = claudeBinary() ?? (() => { try { return createRequire(__filename).resolve(`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude`) } catch { return 'claude' } })()
+  if (process.env.ORC_FAKE_SDK) return { ok: !process.env.ORC_FAKE_LOGGED_OUT, claude }
+  return new Promise((r) => execFile(claude, ['auth', 'status', '--json'], { env: { ...process.env } }, (_e, out) => { try { r({ ok: !!JSON.parse(out).loggedIn, claude }) } catch { r({ ok: false, claude }) } }))
+}
+
 async function hello(h: Hello): Promise<void> {
   const client = h.client
   if (h.takeover && !(await lock.takeover(client))) { write({ error: 'orc is running on another machine with this folder; stop it there first.' }); return }
+  if (h.oauthToken) configureClaude({ env: { CLAUDE_CODE_OAUTH_TOKEN: h.oauthToken } }) // SDK process only; never this process's env or disk
+  else { const l = await loggedIn(); if (!l.ok) { write({ error: 'not-logged-in', claude: l.claude }); return } }
   if (lock.acquire('server', client)) {
     ready = true
     engine.hydrateTitles()

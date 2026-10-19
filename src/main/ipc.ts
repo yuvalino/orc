@@ -4,7 +4,10 @@ import { Engine } from '../server/engine'
 import { createHandlers, methodTable } from '../server/handlers'
 import type { Remote } from './remote'
 import { hosts, openRemote } from './shell'
+import { setToken, token } from './signin'
 import { start, takeover, transportState } from './transport'
+
+const shared = { hosts: async () => hosts(), open: async (h: string) => openRemote(h), signIn: async (t: string | null) => setToken(t), signedIn: async () => !!token() }
 
 export const push = <K extends keyof PushEvents>(channel: K, payload: PushEvents[K]) =>
   BrowserWindow.getAllWindows().forEach((w) => !w.isDestroyed() && w.webContents.send(channel, payload))
@@ -27,14 +30,16 @@ const local: Omit<OrcApi, 'on'> = {
       return base.projects.add(path)
     }
   },
-  transport: { state: async () => transportState(), takeover: () => takeover(), reconnect: async () => start(), hosts: async () => hosts(), open: async (h) => openRemote(h) }
+  transport: { ...shared, state: async () => transportState(), takeover: () => takeover(), reconnect: async () => start(), answer: async () => {} }
 }
 
 /** A remote target: every engine method is forwarded to the server; the transport methods stay here. */
 function remoteTable(remote: Remote): Record<string, (...args: unknown[]) => Promise<unknown>> {
   const table: Record<string, (...args: unknown[]) => Promise<unknown>> = {}
   for (const name of Object.keys(methodTable(base))) table[name] = (...args) => remote.call(name, args)
-  return { ...table, 'transport.state': async () => remote.state, 'transport.takeover': async () => remote.takeover(), 'transport.reconnect': async () => remote.reconnect(), 'transport.hosts': async () => hosts(), 'transport.open': async (h) => openRemote(h as string) }
+  const transport = { ...shared, state: async () => remote.state, takeover: async () => remote.takeover(), reconnect: async () => remote.reconnect(), answer: async (t: string | null) => remote.answer(t) }
+  for (const [k, fn] of Object.entries(transport)) table[`transport.${k}`] = fn as (...args: unknown[]) => Promise<unknown>
+  return table
 }
 
 export function registerIpc(remote?: Remote): void {

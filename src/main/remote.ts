@@ -1,15 +1,17 @@
 import { spawn, type ChildProcess } from 'child_process'
-import { app } from 'electron'
-import { hostname, userInfo } from 'os'
+import { hostname, tmpdir, userInfo } from 'os'
+import { join } from 'path'
 import { createInterface } from 'readline'
 import type { TransportState } from '@shared/api'
 import { decode, encode, type ClientFrame, type ServerFrame } from '@shared/protocol'
 import type { Push } from '../server/engine'
+import { Askpass } from './askpass'
+import { token } from './signin'
 
 /** Hints for the ssh failures everyone hits. */
 function explain(detail: string, code: number | null): string {
-  if (/Permission denied/.test(detail)) return `${detail.trim()}\nAdd your key to the ssh agent; orc connects with keys only.`
-  if (/Host key verification failed/.test(detail)) return `${detail.trim()}\nConnect to the host once in a terminal to accept its key.`
+  if (/Permission denied/.test(detail)) return `${detail.trim()}\nThe host did not accept your key or password.`
+  if (/Host key verification failed/.test(detail)) return `${detail.trim()}\nThe host's key changed; check with its admin, then remove the old entry from ~/.ssh/known_hosts.`
   if (code === 127 || /No such file|not found/.test(detail)) return `orc-server is not installed on the host — push it with scripts/dev-remote.sh <host>.`
   return detail.trim() || `ssh exited with code ${code}`
 }
@@ -29,18 +31,24 @@ export class Remote {
   private pinger?: ReturnType<typeof setInterval>
   private stderr = ''
   private noise: string[] = [] // host stdout before the first frame (shell profiles)
+  private askpass = new Askpass((prompt) => { if (prompt) this.set({ phase: 'prompt', prompt }); else if (this.state.phase === 'prompt') this.set({ phase: 'connecting', prompt: undefined }) })
+  private control = join(tmpdir(), `orc-cm-${process.pid}-%C`) // one authenticated connection per host, reused for 60 s after it closes
 
   constructor(private host: string, private push: Push) { this.state = { kind: 'remote', host, phase: 'connecting', clockOffset: 0 } }
   private set(p: Partial<TransportState>): void { this.state = { ...this.state, ...p }; this.push('transport:state', this.state) }
-  private hello(takeover: boolean): ClientFrame { return { hello: { version: __ORC_VERSION__, client: { host: hostname(), user: userInfo().username }, takeover } } }
+  private hello(takeover: boolean): ClientFrame { return { hello: { version: __ORC_VERSION__, client: { host: hostname(), user: userInfo().username }, takeover, oauthToken: token() } } }
   private write(f: ClientFrame): void { this.proc?.stdin?.write(encode(f)) }
 
   connect(takeover = false): void {
     clearTimeout(this.retry)
     this.stop()
-    this.set({ phase: 'connecting', error: undefined, holder: undefined })
+    this.set({ phase: 'connecting', error: undefined, holder: undefined, prompt: undefined })
     this.stderr = ''; this.noise = []
-    const proc = spawn('ssh', ['-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3', this.host, `exec ~/.orc/${__ORC_VERSION__}/orc-server --stdio`])
+    const proc = spawn('ssh', [
+      '-T', '-o', 'StrictHostKeyChecking=ask', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
+      '-o', 'ControlMaster=auto', '-o', `ControlPath=${this.control}`, '-o', 'ControlPersist=60',
+      this.host, `exec ~/.orc/${__ORC_VERSION__}/orc-server --stdio`
+    ], { env: { ...process.env, ...this.askpass.env } })
     this.proc = proc
     proc.stderr!.on('data', (d) => { this.stderr += d })
     createInterface({ input: proc.stdout! }).on('line', (l) => this.onLine(proc, l))
@@ -78,10 +86,12 @@ export class Remote {
     } else if ('id' in f) {
       const p = this.pending.get(f.id); this.pending.delete(f.id)
       if (p) f.error ? p.rej(new Error(f.error)) : p.res(f.result ?? null)
-    } else if ('error' in f) this.fail(f.error)
+    } else if ('error' in f) {
+      this.fail(f.error === 'not-logged-in' ? `Claude isn't signed in on ${this.host}. Sign in for remote hosts (⌘K → Remote sign-in…), or run: ssh -t ${this.host} ${f.claude ?? 'claude'} auth login` : f.error)
+    }
   }
 
-  private fail(error: string): void { this.set({ phase: 'error', error }); this.stop() }
+  private fail(error: string): void { this.set({ phase: 'error', error, prompt: undefined }); this.stop() }
 
   private onClose(proc: ChildProcess, code: number | null): void {
     if (proc !== this.proc) return
@@ -91,14 +101,15 @@ export class Remote {
     const { phase } = this.state
     if (phase === 'taken-over' || phase === 'error' || phase === 'busy') return // terminal, or waiting on the user
     const detail = this.stderr || this.noise.join('\n')
-    if (phase !== 'ready') return this.set({ phase: 'error', error: explain(detail, code) }) // the handshake never completed: don't loop on it
+    if (phase !== 'ready') return this.set({ phase: 'error', error: explain(detail, code), prompt: undefined }) // the handshake never completed: don't loop on it
     this.set({ phase: 'disconnected', error: detail.trim() || undefined })
     this.retry = setTimeout(() => this.connect(), this.backoff)
     this.backoff = Math.min(this.backoff * 2, 30_000)
   }
 
+  answer(text: string | null): void { this.askpass.answer(text) }
   takeover(): void { if (this.proc && this.state.phase === 'busy') this.write(this.hello(true)); else this.connect(true) } // a busy server waits for a second hello
   reconnect(): void { this.connect() }
-  shutdown(): void { clearTimeout(this.retry); this.write({ shutdown: true }); this.proc?.stdin?.end() }
-  private stop(): void { clearInterval(this.pinger); const p = this.proc; this.proc = null; p?.kill() }
+  shutdown(): void { clearTimeout(this.retry); this.write({ shutdown: true }); this.proc?.stdin?.end(); this.askpass.close() }
+  private stop(): void { clearInterval(this.pinger); const p = this.proc; this.proc = null; p?.kill(); this.askpass.answer(null) }
 }

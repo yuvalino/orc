@@ -13,9 +13,10 @@ export interface PushEvents {
 export interface TransportState {
   kind: 'local' | 'remote'
   host?: string
-  phase: 'connecting' | 'starting' | 'busy' | 'ready' | 'disconnected' | 'error' | 'taken-over'
+  phase: 'connecting' | 'starting' | 'busy' | 'ready' | 'disconnected' | 'error' | 'taken-over' | 'prompt'
   holder?: { client: { host: string; user: string }; since: number; kind: 'local' | 'server' } // phase busy
   by?: { host: string; user: string } // phase taken-over
+  prompt?: string // phase prompt: what ssh is asking (password, passphrase, 2FA, host key)
   error?: string
   clockOffset: number // server clock minus ours
 }
@@ -49,6 +50,9 @@ export interface OrcApi {
     reconnect(): Promise<void>
     hosts(): Promise<string[]> // recent + ~/.ssh/config
     open(host: string): Promise<void> // a new window (instance) for that host
+    answer(text: string | null): Promise<void> // reply to a prompt (null cancels)
+    signIn(token: string | null): Promise<void> // store (or forget) the token for remote hosts
+    signedIn(): Promise<boolean>
   }
   on<K extends keyof PushEvents>(channel: K, cb: (payload: PushEvents[K]) => void): () => void
 }
