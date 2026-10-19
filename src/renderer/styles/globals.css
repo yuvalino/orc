@@ -39,6 +39,9 @@ input.effort { -webkit-appearance: none; height: 22px; border-radius: 11px; outl
 input.effort::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5); cursor: pointer; }
 .drag { -webkit-app-region: drag; }
 .no-drag { -webkit-app-region: no-drag; }
+/* Windows draws its window controls over the top-right 46px; macOS puts traffic lights top-left in the sidebar header. */
+:root[data-platform="win32"] .titlebar-end { padding-right: 150px; }
+:root[data-platform="win32"] .sidebar-head { padding-top: 12px; }
 @keyframes blink { 50% { opacity: 0; } }
 .caret::after { content: ""; display: inline-block; width: 7px; height: 16px; margin-left: 2px; vertical-align: text-bottom; background: var(--color-accent); border-radius: 1px; animation: blink 1s step-end infinite; }
 

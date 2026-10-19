@@ -15,7 +15,7 @@ if (userData) app.setPath('userData', userData)
 if (!app.requestSingleInstanceLock()) app.quit()
 setDataDir(process.env.ORC_DATA_DIR || app.getPath('userData'))
 // The SDK's bundled binary can't be spawned from inside app.asar; point it at the asarUnpack'ed copy when packaged.
-const unpacked = join(process.resourcesPath ?? '', 'app.asar.unpacked/node_modules/@anthropic-ai', `claude-agent-sdk-${process.platform}-${process.arch}/claude`)
+const unpacked = join(process.resourcesPath ?? '', 'app.asar.unpacked/node_modules/@anthropic-ai', `claude-agent-sdk-${process.platform}-${process.arch}/claude${process.platform === 'win32' ? '.exe' : ''}`)
 configureClaude({ version: __ORC_VERSION__, binaryPath: app.isPackaged && existsSync(unpacked) ? unpacked : undefined })
 let secondInstances = 0
 app.on('second-instance', () => { secondInstances++; const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus() } })
@@ -33,8 +33,7 @@ function createWindow(): void {
     minHeight: 560,
     title: remoteHost ? `orc — ${remoteHost}` : 'orc',
     backgroundColor: '#181818',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 14, y: 14 },
+    ...(process.platform === 'win32' ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#181818', symbolColor: '#a0a0a0', height: 46 } } : { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 14, y: 14 } }),
     show: false,
     webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: false }
   })

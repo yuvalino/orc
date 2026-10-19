@@ -11,9 +11,9 @@ export function Sidebar() {
   return (
     <aside className="flex w-[292px] shrink-0 flex-col border-r border-line bg-bg-sidebar">
       {/* Traffic lights sit in this header (hiddenInset), hence the top padding and drag region. */}
-      <div className="drag flex items-center justify-between pb-1.5 pl-4 pr-3 pt-10">
+      <div className="sidebar-head drag flex items-center justify-between pb-1.5 pl-4 pr-3 pt-10">
         <span className="flex items-center gap-2 text-[16px] font-semibold text-fg-bright">orc{transport?.kind === 'remote' && <span className="rounded-md bg-accent/20 px-1.5 py-0.5 text-[11px] font-medium text-[#93b4ff]">ssh: {transport.host}</span>}</span>
-        <button onClick={() => openPalette('chats')} title="Search chats (⌘K)" className="no-drag flex size-8 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><Search size={18} strokeWidth={1.8} /></button>
+        <button onClick={() => openPalette('chats')} title={`Search chats (${navigator.platform.startsWith('Win') ? 'Ctrl+K' : '⌘K'})`} className="no-drag flex size-8 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><Search size={18} strokeWidth={1.8} /></button>
       </div>
       <button onClick={() => newChat()} className="mb-1 mt-1.5 flex w-full items-center gap-2 py-[5px] pl-[18px] pr-4 text-[14px] text-fg-bright hover:bg-bg-hover"><SquarePen size={15} /> New chat</button>
 

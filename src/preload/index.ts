@@ -22,3 +22,4 @@ const api: OrcApi = {
 }
 
 contextBridge.exposeInMainWorld('orc', api)
+window.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.platform = process.platform }) // window chrome differs per OS (see globals.css)

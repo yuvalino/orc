@@ -24,7 +24,7 @@ export function SubagentsPanel() {
   const tools = launches(items), open = panel.toolUseId ? tools.find((t) => t.toolUseId === panel.toolUseId) : undefined
   return (
     <aside className="flex w-[330px] shrink-0 flex-col border-l border-line bg-bg">
-      <div className="drag flex h-[46px] shrink-0 items-center border-b border-line px-3">
+      <div className="titlebar-end drag flex h-[46px] shrink-0 items-center border-b border-line px-3">
         <span className="no-drag flex items-center gap-2 rounded-md bg-bg-active px-2.5 py-1 text-[13px] text-fg-bright"><ListTodo size={14} /> Subagents<button onClick={() => setPanel(null)} className="text-fg-2 hover:text-fg-bright" title="Close"><X size={14} /></button></span>
       </div>
       {open ? <Thread tool={open} items={items} back={() => setPanel({ toolUseId: null })} stop={stopTask} />

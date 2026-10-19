@@ -33,6 +33,7 @@ export function ChatView() {
   const { session, project } = useActive()
   const items = useStore((s) => (session ? s.transcripts[session.id] : undefined))
   const status = useStore((s) => (session ? s.status[session.id] : undefined))
+  const panel = useStore((s) => s.panel)
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
@@ -42,7 +43,7 @@ export function ChatView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="drag flex h-[46px] shrink-0 items-center gap-2 border-b border-line px-4 text-[14px] font-medium text-fg-bright">
+      <div className={`drag flex h-[46px] shrink-0 items-center gap-2 border-b border-line px-4 text-[14px] font-medium text-fg-bright ${panel ? '' : 'titlebar-end'}`}>
         <Folder size={18} className="shrink-0 text-fg-2" />
         <span className="truncate">{session ? sessionTitle(session) : <span className="text-fg-2">New session</span>}</span>
         <div className="no-drag ml-auto flex shrink-0 items-center gap-2">

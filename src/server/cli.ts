@@ -20,8 +20,9 @@ const flag = (name: string) => { const i = args.indexOf(name); return i >= 0 ? a
 const dd = flag('--data-dir')
 if (dd) setDataDir(dd)
 
+const win = process.platform === 'win32', exe = win ? 'claude.exe' : 'claude'
 const isSea = (() => { try { return (require('node:sea') as { isSea(): boolean }).isSea() } catch { return false } })()
-configureClaude({ version: __ORC_VERSION__, binaryPath: isSea ? join(dirname(process.execPath), 'claude') : undefined }) // under plain node the SDK finds its own binary
+configureClaude({ version: __ORC_VERSION__, binaryPath: isSea ? join(dirname(process.execPath), exe) : undefined }) // under plain node the SDK finds its own binary
 
 const write = (f: ServerFrame) => { process.stdout.write(encode(f)) }
 const push: Push = (event, payload) => write({ event, payload })
@@ -38,7 +39,7 @@ function exit(code = 0): void {
 process.stdin.on('end', () => exit())
 process.stdout.on('error', () => exit()) // EPIPE: the client is gone
 process.on('SIGHUP', () => exit())
-process.on('SIGTERM', () => { // a take-over by another instance, or a plain kill
+lock.onTakeover(() => { // a take-over by another instance, or a plain kill
   const by = ready ? lock.takenOverBy() : null
   engine.closeAll(); lock.release()
   if (by) write({ event: 'taken-over', payload: { by } })
@@ -55,7 +56,8 @@ function prune(): void {
   const root = dirname(dirname(process.execPath))
   const num = (v: string) => v.split('.').map((x) => parseInt(x, 10) || 0)
   const newer = (a: string, b: string) => { const x = num(a), y = num(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return (y[i] ?? 0) - (x[i] ?? 0); return 0 }
-  let ps = ''; try { ps = execFileSync('ps', ['-axo', 'args='], { encoding: 'utf-8' }) } catch { return }
+  let ps = ''
+  try { ps = win ? execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', '(Get-CimInstance Win32_Process).CommandLine'], { encoding: 'utf-8', windowsHide: true }) : execFileSync('ps', ['-axo', 'args='], { encoding: 'utf-8' }) } catch { return }
   try {
     const entries = readdirSync(root)
     const versions = entries.filter((e) => /^\d+\.\d+\.\d+/.test(e)).sort(newer)
@@ -66,9 +68,9 @@ function prune(): void {
 
 /** Without a forwarded token the host's own Claude login must exist; the SDK's binary answers that. */
 async function loggedIn(): Promise<{ ok: boolean; claude: string }> {
-  const claude = claudeBinary() ?? (() => { try { return createRequire(__filename).resolve(`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude`) } catch { return 'claude' } })()
+  const claude = claudeBinary() ?? (() => { try { return createRequire(__filename).resolve(`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/${exe}`) } catch { return 'claude' } })()
   if (process.env.ORC_FAKE_SDK) return { ok: !process.env.ORC_FAKE_LOGGED_OUT, claude }
-  return new Promise((r) => execFile(claude, ['auth', 'status', '--json'], { env: { ...process.env } }, (_e, out) => { try { r({ ok: !!JSON.parse(out).loggedIn, claude }) } catch { r({ ok: false, claude }) } }))
+  return new Promise((r) => execFile(claude, ['auth', 'status', '--json'], { env: { ...process.env }, windowsHide: true }, (_e, out) => { try { r({ ok: !!JSON.parse(out).loggedIn, claude }) } catch { r({ ok: false, claude }) } }))
 }
 
 async function hello(h: Hello): Promise<void> {

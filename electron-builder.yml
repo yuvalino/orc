@@ -17,3 +17,8 @@ mac:
   # The unpacked SDK binary is signed along with the bundle.
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+win:
+  target: [nsis]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDir: true

@@ -12,12 +12,14 @@ const server = join(__dirname, '../out/main/orc-server.js')
  * An `ssh` on PATH that ignores its arguments and runs orc-server locally — with a line of "profile noise" first, like a real host's shell would.
  * `password` makes it ask through SSH_ASKPASS first, as ssh does; `env` is extra environment for the server.
  */
-export function sshShim(dataDir: string, o: { fail?: string; password?: string; env?: string } = {}): string {
+export function sshShim(dataDir: string, o: { fail?: string; password?: string; env?: string; windows?: boolean } = {}): string {
   const dir = mkdtempSync(join(tmpdir(), 'orc-ssh-'))
   const ask = o.password ? `pw=$("$SSH_ASKPASS" "fakehost's password:") && [ "$pw" = "${o.password}" ] || { echo "Permission denied (password)." >&2; exit 255; }\n` : ''
+  // A Windows host's cmd.exe has no `sh`: it rejects the Unix bootstrap, and only the Windows-style command reaches the server.
+  const win = o.windows ? `for a; do last=$a; done\ncase "$last" in cmd*) ;; *) echo "'sh' is not recognized as an internal or external command," >&2; exit 1 ;; esac\n` : ''
   const body = o.fail
     ? `#!/bin/sh\necho "${o.fail}" >&2\nexit 255\n`
-    : `#!/bin/sh\n${ask}echo "Welcome to fakehost (motd)"\nexec env ELECTRON_RUN_AS_NODE=1 ORC_FAKE_SDK="${join(__dirname, 'fixtures')}" ${o.env ?? ''} "${electron}" "${server}" --stdio --data-dir "${dataDir}"\n`
+    : `#!/bin/sh\n${ask}${win}echo "Welcome to fakehost (motd)"\nexec env ELECTRON_RUN_AS_NODE=1 ORC_FAKE_SDK="${join(__dirname, 'fixtures')}" ${o.env ?? ''} "${electron}" "${server}" --stdio --data-dir "${dataDir}"\n`
   writeFileSync(join(dir, 'ssh'), body)
   chmodSync(join(dir, 'ssh'), 0o755)
   return dir
@@ -95,6 +97,14 @@ test('remote sign-in: ssh prompts answered in the window, the token reaches only
   await local.page.getByText('Remote sign-in…').click()
   await expect(local.page.getByText('Not signed in')).toBeVisible()
   await local.close()
+})
+
+test('a Windows host is recognised on the first connect and remembered', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'orc-remote-data-'))
+  const c = await launch({ remote: 'fakehost', dataDir, seed: true, env: { PATH: `${sshShim(dataDir, { windows: true })}:${process.env.PATH}` } })
+  await expect(c.page.getByText('ssh: fakehost')).toBeVisible()
+  expect(JSON.parse(readFileSync(join(c.userData, 'shell.json'), 'utf-8')).windowsHosts).toEqual(['fakehost'])
+  await c.close()
 })
 
 test('remote UI: hosts from ~/.ssh/config, the remote folder picker', async () => {

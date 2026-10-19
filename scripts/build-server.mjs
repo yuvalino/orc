@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Builds self-contained orc-server bundles: a Node Single Executable Application + the platform's `claude` binary.
-// Usage: node scripts/build-server.mjs [target ...]   targets: darwin-arm64 darwin-x64 linux-x64 linux-arm64 (default: this machine)
+// Usage: node scripts/build-server.mjs [target ...]   targets: darwin-arm64 darwin-x64 linux-x64 linux-arm64 win32-x64 win32-arm64 (default: this machine)
 // Runs on macOS (codesign). Node is pinned to Electron's: the blob is built with that version and injected into each target's stock binary.
 import { execFileSync } from 'child_process'
 import { createHash } from 'crypto'
@@ -28,22 +28,24 @@ async function download(url, to) {
 }
 /** Stock `bin/node` for a target, checksum-verified against nodejs.org. */
 async function nodeFor(target) {
-  const dir = join(cache, `node-${target}`), bin = join(dir, 'node')
+  const win = target.startsWith('win32'), dir = join(cache, `node-${target}`), bin = join(dir, win ? 'node.exe' : 'node')
   if (existsSync(bin)) return bin
-  const name = `node-v${NODE}-${target}`, tgz = join(cache, `${name}.tar.gz`), sums = join(cache, `SHASUMS256-${NODE}.txt`)
-  await download(`https://nodejs.org/dist/v${NODE}/${name}.tar.gz`, tgz)
+  const name = `node-v${NODE}-${win ? target.replace('win32', 'win') : target}`, ext = win ? 'zip' : 'tar.gz', archive = join(cache, `${name}.${ext}`), sums = join(cache, `SHASUMS256-${NODE}.txt`)
+  await download(`https://nodejs.org/dist/v${NODE}/${name}.${ext}`, archive)
   await download(`https://nodejs.org/dist/v${NODE}/SHASUMS256.txt`, sums)
-  const expected = readFileSync(sums, 'utf-8').split('\n').find((l) => l.endsWith(`${name}.tar.gz`))?.split(/\s+/)[0]
-  if (sha256(tgz) !== expected) throw new Error(`checksum mismatch for ${name}`)
+  const expected = readFileSync(sums, 'utf-8').split('\n').find((l) => l.endsWith(`${name}.${ext}`))?.split(/\s+/)[0]
+  if (sha256(archive) !== expected) throw new Error(`checksum mismatch for ${name}`)
   mkdirSync(dir, { recursive: true })
-  sh('tar', ['xzf', tgz, '-C', dir, '--strip-components=2', `${name}/bin/node`])
+  if (win) sh('tar', ['xf', archive, '-C', dir, '--strip-components=1', `${name}/node.exe`]) // bsdtar reads zips
+  else sh('tar', ['xzf', archive, '-C', dir, '--strip-components=2', `${name}/bin/node`])
   return bin
 }
 /** The SDK platform package's `claude` for a target: the installed one, or fetched with npm pack. */
 function claudeFor(target) {
-  const local = join('node_modules/@anthropic-ai', `claude-agent-sdk-${target}`, 'claude')
+  const exe = target.startsWith('win32') ? 'claude.exe' : 'claude'
+  const local = join('node_modules/@anthropic-ai', `claude-agent-sdk-${target}`, exe)
   if (existsSync(local)) return local
-  const dir = join(cache, `claude-${target}`), bin = join(dir, 'package', 'claude')
+  const dir = join(cache, `claude-${target}`), bin = join(dir, 'package', exe)
   if (!existsSync(bin)) {
     mkdirSync(dir, { recursive: true })
     const tgz = execFileSync('npm', ['pack', `@anthropic-ai/claude-agent-sdk-${target}@${sdkVersion}`, '--pack-destination', dir], { encoding: 'utf-8' }).trim()
@@ -63,16 +65,17 @@ sh(await nodeFor(host), ['--experimental-sea-config', seaCfg])
 // 3. Per target: inject, sign, add claude, tar, hash.
 const bundles = {}
 for (const t of targets) {
-  const dir = join(out, t), bin = join(dir, 'orc-server')
+  const win = t.startsWith('win32'), server = win ? 'orc-server.exe' : 'orc-server', claude = win ? 'claude.exe' : 'claude'
+  const dir = join(out, t), bin = join(dir, server)
   rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true })
   copyFileSync(await nodeFor(t), bin); chmodSync(bin, 0o755)
   const mac = t.startsWith('darwin')
   if (mac) sh('codesign', ['--remove-signature', bin])
-  sh(require.resolve('postject/dist/cli.js'), [bin, 'NODE_SEA_BLOB', blob, '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2', ...(mac ? ['--macho-segment-name', 'NODE_SEA'] : [])])
+  sh(require.resolve('postject/dist/cli.js'), [bin, 'NODE_SEA_BLOB', blob, '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2', ...(mac ? ['--macho-segment-name', 'NODE_SEA'] : [])]) // ELF, Mach-O and PE alike
   if (mac) sh('codesign', ['-s', '-', bin])
-  copyFileSync(claudeFor(t), join(dir, 'claude')); chmodSync(join(dir, 'claude'), 0o755)
+  copyFileSync(claudeFor(t), join(dir, claude)); chmodSync(join(dir, claude), 0o755)
   const tgz = join(out, `orc-server-${t}.tar.gz`)
-  sh('tar', ['czf', tgz, '-C', dir, 'orc-server', 'claude'])
+  sh('tar', ['czf', tgz, '-C', dir, server, claude]) // Windows 10+ ships tar.exe, which unpacks this
   bundles[t] = { url: `https://github.com/yuvalino/orc/releases/download/v${pkg.version}/orc-server-${t}.tar.gz`, sha256: sha256(tgz) }
   console.log('built', tgz)
 }

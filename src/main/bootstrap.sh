@@ -11,6 +11,7 @@ if [ ! -x "$dir/orc-server" ]; then
   case "$(uname -sm)" in
     "Darwin arm64") t=darwin-arm64 ;; "Darwin x86_64") t=darwin-x64 ;;
     "Linux x86_64") t=linux-x64 ;; "Linux aarch64") t=linux-arm64 ;;
+    MINGW*|MSYS*|CYGWIN*) fail windows-shell ;; # a Windows host whose login shell is Git's bash: the client retries the Windows way
     *) fail unsupported-host ;;
   esac
   if [ "${t%%-*}" = linux ]; then

@@ -28,7 +28,7 @@ export async function takeover(): Promise<void> {
 
 export function boot(): void {
   lock = new Lock(dataDir())
-  process.on('SIGTERM', () => { // a take-over by another instance, or a plain kill
+  lock.onTakeover(() => { // a take-over by another instance, or a plain kill
     const mine = state.phase === 'ready'
     engine.closeAll()
     const by = mine ? lock.takenOverBy() : null

@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'fs'
 import { hostname, userInfo } from 'os'
 import { join } from 'path'
 
@@ -7,17 +7,24 @@ export interface Client { host: string; user: string }
 /** `host`/`user`/`pid` identify the holder process (liveness); `client` is who drives it (what the busy screen shows). */
 export interface Holder { pid: number; startedAt: string; host: string; user: string; client: Client; since: number; kind: 'local' | 'server' }
 
+const win = process.platform === 'win32'
+const powershell = (cmd: string) => execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', cmd], { encoding: 'utf-8', windowsHide: true }).trim()
+
 /** Process start time, compared verbatim so a recycled pid never passes for the holder. */
 function startTime(pid: number): string | null {
   try {
     if (process.platform === 'linux') { const s = readFileSync(`/proc/${pid}/stat`, 'utf-8'); return s.slice(s.lastIndexOf(')') + 2).split(' ')[19] ?? null }
+    if (win) return powershell(`(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).StartTime.ToFileTimeUtc()`) || null
     return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { env: { ...process.env, LC_ALL: 'C' }, encoding: 'utf-8' }).trim() || null // locale-dependent output otherwise
   } catch { return null }
 }
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM' } }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-/** One engine per data dir: `<dataDir>/lock` names the holder; `<dataDir>/takeover` tells a SIGTERMed holder who evicted it. */
+/**
+ * One engine per data dir: `<dataDir>/lock` names the holder; `<dataDir>/takeover` tells an evicted holder who evicted it.
+ * The eviction signal is SIGTERM; on Windows, where a signal is a plain kill, the holder watches for the marker instead.
+ */
 export class Lock {
   readonly client: Client = { host: hostname(), user: userInfo().username }
   constructor(private dir: string) {}
@@ -54,17 +61,26 @@ export class Lock {
     if (!h) return true
     if (h.host !== hostname()) return false
     writeFileSync(this.marker, JSON.stringify({ client, at: Date.now() }))
-    try { process.kill(h.pid, 'SIGTERM') } catch { /* already gone */ }
+    if (!win) try { process.kill(h.pid, 'SIGTERM') } catch { /* already gone */ }
     for (let i = 0; i < 50 && existsSync(this.path); i++) await sleep(100)
     if (existsSync(this.path)) { // the holder's event loop is stuck: the claude children only die with their parent's cooperation
-      try { for (const c of execFileSync('pgrep', ['-P', String(h.pid)], { encoding: 'utf-8' }).split('\n').filter(Boolean)) process.kill(Number(c), 'SIGTERM') } catch { /* none */ }
-      try { process.kill(h.pid, 'SIGKILL') } catch { /* gone */ }
+      if (win) try { execFileSync('taskkill', ['/PID', String(h.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }) } catch { /* gone */ }
+      else {
+        try { for (const c of execFileSync('pgrep', ['-P', String(h.pid)], { encoding: 'utf-8' }).split('\n').filter(Boolean)) process.kill(Number(c), 'SIGTERM') } catch { /* none */ }
+        try { process.kill(h.pid, 'SIGKILL') } catch { /* gone */ }
+      }
       rmSync(this.path, { force: true })
     }
     return true
   }
 
-  /** For a holder handling SIGTERM: who took over, or null when it was an ordinary kill (no fresh marker). */
+  /** Run `cb` when this process is being evicted (or, outside Windows, plainly SIGTERMed). */
+  onTakeover(cb: () => void): void {
+    if (!win) { process.on('SIGTERM', cb); return }
+    watchFile(this.marker, { interval: 300 }, (cur) => { if (cur.mtimeMs) { unwatchFile(this.marker); cb() } })
+  }
+
+  /** For an evicted holder: who took over, or null when it was an ordinary kill (no fresh marker). */
   takenOverBy(): Client | null {
     try {
       const m = JSON.parse(readFileSync(this.marker, 'utf-8'))

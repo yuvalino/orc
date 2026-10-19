@@ -9,6 +9,8 @@ import type { Push } from '../server/engine'
 import { Askpass } from './askpass'
 import manifest from '../../bundles.json'
 import bootstrap from './bootstrap.sh?raw'
+import bootstrapPs from './bootstrap.ps1?raw'
+import { shellStore } from './shell'
 import { token } from './signin'
 
 /** Hints for the ssh failures everyone hits. */
@@ -22,20 +24,25 @@ const INSTALL_FAILED: Record<string, string> = {
   download: 'The host could not download the orc server bundle; it needs internet access to github.com.',
   sha256: 'The downloaded orc server bundle did not match its checksum.',
   unpacking: 'The orc server bundle could not be unpacked on the host.',
-  'unsupported-host': 'orc-server runs on macOS and glibc ≥ 2.28 Linux (x64/arm64); this host is something else.'
+  'unsupported-host': 'orc-server runs on macOS, glibc ≥ 2.28 Linux and Windows (x64/arm64); this host is something else.'
 }
 
 /**
- * The remote command: a bootstrap that installs ~/.orc/<version>/ on first use and then becomes the server. It is
- * base64-encoded so the user's login shell (whatever it is) hands it to `sh` untouched; the bundle table is the repo's
- * bundles.json, compiled in (ORC_BUNDLES_JSON points tests at another one).
+ * The remote command: a bootstrap that installs ~/.orc/<version>/ on first use and then becomes the server. The bundle
+ * table is the repo's bundles.json, compiled in (ORC_BUNDLES_JSON points tests at another one).
+ * Unix hosts: a sh script, base64-encoded so the user's login shell (whatever it is) hands it to `sh` untouched.
+ * Windows hosts: a PowerShell install script (-EncodedCommand, so cmd and PowerShell both pass it untouched) chained
+ * with the server by cmd, which hands it our stdio intact. Which kind a host is gets learnt on the first connect.
  */
-function remoteCommand(): string {
+function remoteCommand(windows: boolean): string {
   const { bundles } = (process.env.ORC_BUNDLES_JSON ? JSON.parse(readFileSync(process.env.ORC_BUNDLES_JSON, 'utf-8')) : manifest) as { bundles: Record<string, { url: string; sha256: string }> }
-  const table = Object.entries(bundles).map(([t, b]) => `${t} ${b.url} ${b.sha256}`).join('\n')
-  const script = bootstrap.replaceAll('__VERSION__', () => __ORC_VERSION__).replaceAll('__BUNDLES__', () => table)
+  const table = Object.entries(bundles).filter(([t]) => t.startsWith('win32') === windows).map(([t, b]) => `${t} ${b.url} ${b.sha256}`).join('\n')
+  const script = (windows ? bootstrapPs : bootstrap).replaceAll('__VERSION__', () => __ORC_VERSION__).replaceAll('__BUNDLES__', () => table)
+  if (windows) return `cmd /c "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(script, 'utf16le').toString('base64')} && %USERPROFILE%\\.orc\\${__ORC_VERSION__}\\orc-server.exe --stdio"`
   return `sh -c 'eval "$(printf %s ${Buffer.from(script).toString('base64')} | base64 --decode)"'`
 }
+/** What a Unix bootstrap sent to a Windows host comes back with: cmd, PowerShell, or Git's bash via the script itself. */
+const WINDOWS_HOST = /'sh' is not recognized|The term 'sh' is not recognized/
 
 /**
  * The remote transport: `ssh host orc-server --stdio` spoken to over its stdio. The server lives exactly as long
@@ -54,8 +61,18 @@ export class Remote {
   private noise: string[] = [] // host stdout before the first frame (shell profiles)
   private askpass = new Askpass((prompt) => { if (prompt) this.set({ phase: 'prompt', prompt }); else if (this.state.phase === 'prompt') this.set({ phase: 'connecting', prompt: undefined }) })
   private control = join(tmpdir(), `orc-cm-${process.pid}-%C`) // one authenticated connection per host, reused for 60 s after it closes
+  private windows: boolean // the host runs Windows (learnt on the first connect, remembered per host)
+  private takeoverWanted = false
 
-  constructor(private host: string, private push: Push) { this.state = { kind: 'remote', host, phase: 'connecting', clockOffset: 0 } }
+  constructor(private host: string, private push: Push) {
+    this.state = { kind: 'remote', host, phase: 'connecting', clockOffset: 0 }
+    this.windows = ((shellStore.read().windowsHosts as string[] | undefined) ?? []).includes(host)
+  }
+  private learnWindows(): void {
+    this.windows = true
+    const s = shellStore.read(), known = (s.windowsHosts as string[] | undefined) ?? []
+    shellStore.write({ ...s, windowsHosts: [...new Set([...known, this.host])] })
+  }
   private set(p: Partial<TransportState>): void { this.state = { ...this.state, ...p }; this.push('transport:state', this.state) }
   private hello(takeover: boolean): ClientFrame { return { hello: { version: __ORC_VERSION__, client: { host: hostname(), user: userInfo().username }, takeover, oauthToken: token() } } }
   private write(f: ClientFrame): void { this.proc?.stdin?.write(encode(f)) }
@@ -65,11 +82,12 @@ export class Remote {
     this.stop()
     this.set({ phase: 'connecting', error: undefined, holder: undefined, prompt: undefined, install: undefined })
     this.stderr = ''; this.noise = []
+    this.takeoverWanted = takeover
     const proc = spawn('ssh', [
       '-T', '-o', 'StrictHostKeyChecking=ask', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
-      '-o', 'ControlMaster=auto', '-o', `ControlPath=${this.control}`, '-o', 'ControlPersist=60',
-      this.host, remoteCommand()
-    ], { env: { ...process.env, ...this.askpass.env } })
+      ...(process.platform === 'win32' ? [] : ['-o', 'ControlMaster=auto', '-o', `ControlPath=${this.control}`, '-o', 'ControlPersist=60']), // Windows' OpenSSH has no multiplexing
+      this.host, remoteCommand(this.windows)
+    ], { env: { ...process.env, ...this.askpass.env }, windowsHide: true })
     this.proc = proc
     proc.stderr!.on('data', (d) => { this.stderr += d })
     createInterface({ input: proc.stdout! }).on('line', (l) => this.onLine(proc, l))
@@ -111,6 +129,7 @@ export class Remote {
       this.set({ phase: 'installing', install: f.install.phase })
     } else if ('error' in f) {
       if (f.error === 'not-logged-in') this.fail(`Claude isn't signed in on ${this.host}. Sign in for remote hosts (⌘K → Remote sign-in…), or run: ssh -t ${this.host} ${f.claude ?? 'claude'} auth login`)
+      else if (f.error === 'install-failed' && f.reason === 'windows-shell' && !this.windows) { this.learnWindows(); this.connect(this.takeoverWanted) }
       else if (f.error === 'install-failed') this.fail(INSTALL_FAILED[f.reason ?? ''] ?? `Installing orc-server on ${this.host} failed (${f.reason}).`)
       else this.fail(f.error)
     }
@@ -126,6 +145,7 @@ export class Remote {
     const { phase } = this.state
     if (phase === 'taken-over' || phase === 'error' || phase === 'busy') return // terminal, or waiting on the user
     const detail = this.stderr || this.noise.join('\n')
+    if (phase !== 'ready' && !this.windows && WINDOWS_HOST.test(detail)) { this.learnWindows(); return this.connect(this.takeoverWanted) } // once per host
     if (phase !== 'ready') return this.set({ phase: 'error', error: explain(detail, code), prompt: undefined }) // the handshake never completed: don't loop on it
     this.set({ phase: 'disconnected', error: detail.trim() || undefined })
     this.retry = setTimeout(() => this.connect(), this.backoff)
