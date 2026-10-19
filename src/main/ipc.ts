@@ -6,6 +6,7 @@ import type { ApprovalMode } from '@shared/types'
 import { Engine } from './engine'
 import { DEFAULT_CODEC } from './codecs/registry'
 import { projects, sessions, settings } from './store'
+import { start, takeover, transportState } from './transport'
 
 export const push = <K extends keyof PushEvents>(channel: K, payload: PushEvents[K]) =>
   BrowserWindow.getAllWindows().forEach((w) => !w.isDestroyed() && w.webContents.send(channel, payload))
@@ -53,7 +54,8 @@ const handlers: Handlers = {
   },
   answerAsk: async (askId, answer) => engine.answerAsk(askId, answer),
   codecInfo: () => engine.info(),
-  settings: { get: async (k) => settings.get(k), set: async (k, v) => settings.set(k, v) }
+  settings: { get: async (k) => settings.get(k), set: async (k, v) => settings.set(k, v) },
+  transport: { state: async () => transportState(), takeover: () => takeover(), reconnect: async () => start() }
 }
 
 const SKIP = new Set(['node_modules', '.git', 'dist', 'out', 'build', '.next', 'target'])
@@ -85,5 +87,4 @@ export function registerIpc(): void {
     }
   }
   walk({ ...handlers, asks: { answer: handlers.answerAsk }, codec: { info: handlers.codecInfo } }, '')
-  engine.hydrateTitles()
 }

@@ -1,7 +1,17 @@
 import { app, BrowserWindow, Menu, shell } from 'electron'
 import { join } from 'path'
-import { engine, push, registerIpc } from './ipc'
+import { push, registerIpc } from './ipc'
 import { settings } from './store'
+import { boot } from './transport'
+
+// One instance per target per machine: the single-instance lock is keyed on userData, so tests and dev
+// instances get their own (ORC_USER_DATA_DIR, defaulting to the engine's ORC_DATA_DIR) and never collide.
+const userData = process.env.ORC_USER_DATA_DIR || process.env.ORC_DATA_DIR
+if (userData) app.setPath('userData', userData)
+if (!app.requestSingleInstanceLock()) app.quit()
+let secondInstances = 0
+app.on('second-instance', () => { secondInstances++; const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus() } })
+Object.assign(globalThis, { orcSecondInstances: () => secondInstances })
 
 function createWindow(): void {
   const saved = (settings.get('window') as Electron.Rectangle | undefined) ?? { width: 1274, height: 797, x: undefined, y: undefined }
@@ -38,8 +48,8 @@ function buildMenu(): void {
 app.whenReady().then(() => {
   buildMenu()
   registerIpc()
+  boot()
   createWindow()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())
 })
-app.on('before-quit', () => engine.closeAll())
 app.on('window-all-closed', () => process.platform !== 'darwin' && app.quit())

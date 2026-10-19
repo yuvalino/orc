@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Account, ApprovalMode, AskAnswer, Item, ModelOption, Project, Session, SessionStatus } from '@shared/types'
+import type { TransportState } from '@shared/api'
 import { applyPatch } from '@shared/types'
 
 /** What a new chat starts with; the composer edits these when no chat is open. */
@@ -19,6 +20,7 @@ interface State {
   palette: null | 'chats' | 'files'
   panel: null | { toolUseId: string | null } // Subagents panel: closed, the lists, or one agent's thread
   defaults: Defaults
+  transport: TransportState | null // null until the first state arrives
 
   init(): void
   setDefaults(patch: Partial<Defaults>): void
@@ -39,21 +41,30 @@ const api = () => window.orc
 
 export const useStore = create<State>((set, get) => ({
   projects: [], sessions: [], activeId: null, draftProjectId: null, transcripts: {}, status: {}, unread: {}, models: [], account: null, draft: '', palette: null, panel: null,
-  defaults: { approvalMode: 'ask', model: null, effort: null },
+  defaults: { approvalMode: 'ask', model: null, effort: null }, transport: null,
 
   init() {
-    api().projects.list().then((projects) => set((s) => ({ projects, draftProjectId: s.draftProjectId ?? projects[0]?.id ?? null }))) // a fresh chat starts in a project when one exists
-    Promise.all((['approvalMode', 'model', 'effort'] as const).map((k) => api().settings.get(k))).then(([approvalMode, model, effort]) =>
-      set((s) => ({ defaults: { approvalMode: (approvalMode as ApprovalMode) ?? s.defaults.approvalMode, model: (model as string) ?? null, effort: (effort as string) ?? null } })))
-    api().settings.get('models').then((m) => set((s) => (s.models.length || !Array.isArray(m) ? s : { models: m }))) // last known list, so the picker works before any process runs
-    api().sessions.list().then(async (sessions) => {
+    const loadModels = () => api().codecInfo().then((i) => { if (i.models.length) { set({ models: i.models, account: i.account }); api().settings.set('models', i.models) } })
+    // Everything the engine knows is (re)fetched whenever the transport reports ready: at startup, and after a reconnect or take-over.
+    const load = async () => {
+      set({ transcripts: {}, status: {}, unread: {}, models: [], account: null })
+      api().projects.list().then((projects) => set((s) => ({ projects, draftProjectId: s.draftProjectId ?? projects[0]?.id ?? null }))) // a fresh chat starts in a project when one exists
+      Promise.all((['approvalMode', 'model', 'effort'] as const).map((k) => api().settings.get(k))).then(([approvalMode, model, effort]) =>
+        set((s) => ({ defaults: { approvalMode: (approvalMode as ApprovalMode) ?? s.defaults.approvalMode, model: (model as string) ?? null, effort: (effort as string) ?? null } })))
+      api().settings.get('models').then((m) => set((s) => (s.models.length || !Array.isArray(m) ? s : { models: m }))) // last known list, so the picker works before any process runs
+      const sessions = await api().sessions.list()
       set({ sessions })
       // Indicators for chats that were already running (e.g. after a renderer reload); their status is only pushed on change.
       const pairs = await Promise.all(sessions.map(async (x) => [x.id, await api().sessions.status(x.id)] as const))
       const live = pairs.filter(([, st]) => st.state !== 'closed')
       set((s) => ({ status: { ...Object.fromEntries(live), ...s.status } }))
       if (live.length) loadModels()
-    })
+      const id = get().activeId
+      if (id) { set({ activeId: null }); get().select(id) }
+    }
+    const onTransport = (t: TransportState) => { const was = get().transport?.phase; set({ transport: t }); if (t.phase === 'ready' && was !== 'ready') load() }
+    api().on('transport:state', onTransport)
+    api().transport.state().then(onTransport) // a state pushed before the page loaded would otherwise be lost
     api().on('projects:changed', (projects) => set((s) => ({ projects, draftProjectId: projects.some((p) => p.id === s.draftProjectId) ? s.draftProjectId : projects[0]?.id ?? null }))) // the drafted-into project may have been removed
     api().on('sessions:changed', (sessions) => set((s) => ({ sessions, activeId: sessions.some((x) => x.id === s.activeId) ? s.activeId : null }))) // the open chat may have been deleted
     api().on('transcript:patch', ({ sessionId, patch }) =>
@@ -66,7 +77,6 @@ export const useStore = create<State>((set, get) => ({
       })
       if (!get().account && status.state !== 'closed' && status.state !== 'starting') loadModels()
     })
-    const loadModels = () => api().codecInfo().then((i) => { if (i.models.length) { set({ models: i.models, account: i.account }); api().settings.set('models', i.models) } })
     api().on('menu:new-chat', () => get().newChat())
   },
 

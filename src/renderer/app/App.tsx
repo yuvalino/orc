@@ -5,9 +5,10 @@ import { ChatView } from '../chat/ChatView'
 import { Composer } from '../composer/Composer'
 import { Palette } from '../lib/Palette'
 import { SubagentsPanel } from '../chat/Subagents'
+import { Connect } from './Connect'
 
 export default function App() {
-  const { init, openPalette, newChat } = useStore()
+  const { init, openPalette, newChat, transport } = useStore()
   useEffect(() => {
     init()
     const onKey = (e: KeyboardEvent) => {
@@ -18,6 +19,7 @@ export default function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+  if (!transport || transport.phase !== 'ready') return <div className="flex h-full">{transport && <Connect t={transport} />}</div>
   return (
     <div className="flex h-full">
       <Sidebar />

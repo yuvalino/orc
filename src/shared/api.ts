@@ -6,6 +6,18 @@ export interface PushEvents {
   'sessions:changed': Session[]
   'projects:changed': Project[]
   'menu:new-chat': undefined
+  'transport:state': TransportState
+}
+
+/** How this window reaches its engine, and whether that engine is ours to use. */
+export interface TransportState {
+  kind: 'local' | 'remote'
+  host?: string
+  phase: 'connecting' | 'starting' | 'busy' | 'ready' | 'disconnected' | 'error' | 'taken-over'
+  holder?: { client: { host: string; user: string }; since: number; kind: 'local' | 'server' } // phase busy
+  by?: { host: string; user: string } // phase taken-over
+  error?: string
+  clockOffset: number // server clock minus ours
 }
 
 export interface OrcApi {
@@ -29,6 +41,7 @@ export interface OrcApi {
   answerAsk(askId: string, answer: AskAnswer): Promise<void>
   codecInfo(): Promise<{ models: ModelOption[]; account: Account | null }>
   settings: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }
+  transport: { state(): Promise<TransportState>; takeover(): Promise<void>; reconnect(): Promise<void> }
   on<K extends keyof PushEvents>(channel: K, cb: (payload: PushEvents[K]) => void): () => void
 }
 
