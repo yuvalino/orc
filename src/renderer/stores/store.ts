@@ -45,11 +45,14 @@ export const useStore = create<State>((set, get) => ({
     api().projects.list().then((projects) => set((s) => ({ projects, draftProjectId: s.draftProjectId ?? projects[0]?.id ?? null }))) // a fresh chat starts in a project when one exists
     Promise.all((['approvalMode', 'model', 'effort'] as const).map((k) => api().settings.get(k))).then(([approvalMode, model, effort]) =>
       set((s) => ({ defaults: { approvalMode: (approvalMode as ApprovalMode) ?? s.defaults.approvalMode, model: (model as string) ?? null, effort: (effort as string) ?? null } })))
+    api().settings.get('models').then((m) => set((s) => (s.models.length || !Array.isArray(m) ? s : { models: m }))) // last known list, so the picker works before any process runs
     api().sessions.list().then(async (sessions) => {
       set({ sessions })
       // Indicators for chats that were already running (e.g. after a renderer reload); their status is only pushed on change.
       const pairs = await Promise.all(sessions.map(async (x) => [x.id, await api().sessions.status(x.id)] as const))
-      set((s) => ({ status: { ...Object.fromEntries(pairs.filter(([, st]) => st.state !== 'closed')), ...s.status } }))
+      const live = pairs.filter(([, st]) => st.state !== 'closed')
+      set((s) => ({ status: { ...Object.fromEntries(live), ...s.status } }))
+      if (live.length) loadModels()
     })
     api().on('projects:changed', (projects) => set((s) => ({ projects, draftProjectId: projects.some((p) => p.id === s.draftProjectId) ? s.draftProjectId : projects[0]?.id ?? null }))) // the drafted-into project may have been removed
     api().on('sessions:changed', (sessions) => set((s) => ({ sessions, activeId: sessions.some((x) => x.id === s.activeId) ? s.activeId : null }))) // the open chat may have been deleted
@@ -61,8 +64,9 @@ export const useStore = create<State>((set, get) => ({
         const finished = was === 'running' && (status.state === 'idle' || status.state === 'closed') && s.activeId !== sessionId
         return { status: { ...s.status, [sessionId]: status }, unread: finished ? { ...s.unread, [sessionId]: true } : s.unread }
       })
-      if (!get().models.length && status.state !== 'closed' && status.state !== 'starting') api().codecInfo().then((i) => set({ models: i.models, account: i.account }))
+      if (!get().account && status.state !== 'closed' && status.state !== 'starting') loadModels()
     })
+    const loadModels = () => api().codecInfo().then((i) => { if (i.models.length) { set({ models: i.models, account: i.account }); api().settings.set('models', i.models) } })
     api().on('menu:new-chat', () => get().newChat())
   },
 

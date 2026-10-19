@@ -120,7 +120,10 @@ export class Engine {
       this.apply(id, e, { op: 'update', id: askId, partial: { answer } })
       this.setTool(id, e, pending.ask.toolUseId, denied ? 'denied' : 'running')
       // The codec switched mode on the user's behalf; keep the session in step so the composer says so and asks stop.
-      if (answer.type === 'plan' && !denied) this.setApprovalMode(id, answer.decision === 'approve-edits' ? 'accept-edits' : 'ask', false)
+      if (answer.type === 'plan' && !denied) { // plain approve only leaves plan mode; the mode the chat had before stays
+        if (answer.decision === 'approve-edits') this.setApprovalMode(id, 'accept-edits', false)
+        else if (this.session(id).approvalMode === 'read-only') this.setApprovalMode(id, 'ask', false)
+      }
       if (answer.type === 'permission' && answer.decision === 'always' && pending.ask.type === 'permission' && pending.ask.alwaysMode) this.setApprovalMode(id, pending.ask.alwaysMode, false)
       if (e.asks.size === 0) this.resume(id, e)
       return
@@ -212,6 +215,7 @@ export class Engine {
     }
     e.asks.clear(); e.resumeState = undefined; e.stopping = false
     for (const i of e.items) {
+      if ('streaming' in i && i.streaming) this.apply(id, e, { op: 'update', id: i.id, partial: { streaming: false } })
       if (i.kind !== 'tool' || (i.status !== 'running' && i.status !== 'awaiting_approval')) continue
       this.apply(id, e, { op: 'update', id: i.id, partial: { status: 'interrupted', ...(i.task?.status === 'running' ? { task: { ...i.task, status: 'stopped', endedAt: Date.now() } } : {}) } })
     }

@@ -39,7 +39,7 @@ function toAsk(toolName: string, input: Record<string, unknown>, opts: { title?:
   return { type: 'permission', id, toolUseId, toolName, input, title: opts.title, description: opts.description, canAlwaysAllow: !!opts.suggestions?.length && !opts.suppressAlwaysAllowRule, alwaysMode }
 }
 
-function toResult(answer: AskAnswer, input: Record<string, unknown>, suggestions: PermissionUpdate[] = []): PermissionResult {
+function toResult(answer: AskAnswer, input: Record<string, unknown>, suggestions: PermissionUpdate[], mode: ApprovalMode): PermissionResult {
   switch (answer.type) {
     case 'permission':
       if (answer.decision === 'deny') return { behavior: 'deny', message: answer.message ?? 'User declined', decisionClassification: 'user_reject' }
@@ -49,7 +49,7 @@ function toResult(answer: AskAnswer, input: Record<string, unknown>, suggestions
     case 'question': return { behavior: 'allow', updatedInput: { ...input, answers: answer.answers } }
     case 'plan':
       if (answer.decision === 'reject') return { behavior: 'deny', message: answer.feedback ?? 'Plan rejected' }
-      return { behavior: 'allow', updatedInput: input, updatedPermissions: [{ type: 'setMode', mode: answer.decision === 'approve-edits' ? 'acceptEdits' : 'default', destination: 'session' }] }
+      return { behavior: 'allow', updatedInput: input, updatedPermissions: [{ type: 'setMode', mode: answer.decision === 'approve-edits' ? 'acceptEdits' : MODES[mode === 'read-only' ? 'ask' : mode], destination: 'session' }] } // plain approve keeps the chat's own mode
   }
 }
 
@@ -61,6 +61,7 @@ export class ClaudeCodec implements Codec {
     const sdk = await loadSdk()
     const input = inputQueue<SDKUserMessage>()
     const st = newReduceState()
+    let mode = p.approvalMode
     const q: Query = sdk.query({ prompt: input.iter, options: {
       cwd: p.cwd,
       ...(p.resume ? { resume: p.sessionId } : { sessionId: p.sessionId }),
@@ -78,7 +79,7 @@ export class ClaudeCodec implements Codec {
       pathToClaudeCodeExecutable: bundledBinary(),
       perTaskStopAffordance: true,
       settings: { bashEditDiffEnabled: true }, // Bash results carry a diff of the files the command changed
-      canUseTool: async (toolName, toolInput, opts) => toResult(await sink.ask(toAsk(toolName, toolInput, opts), opts.signal), toolInput, opts.suggestions)
+      canUseTool: async (toolName, toolInput, opts) => toResult(await sink.ask(toAsk(toolName, toolInput, opts), opts.signal), toolInput, opts.suggestions ?? [], mode)
     } })
 
     ;(async () => {
@@ -101,7 +102,7 @@ export class ClaudeCodec implements Codec {
       send: (text, uuid) => input.push({ type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null, uuid: uuid as SDKUserMessage['uuid'] }),
       interrupt: async () => { await q.interrupt() },
       stopTask: (id) => q.stopTask(id),
-      setApprovalMode: (m) => q.setPermissionMode(MODES[m]),
+      setApprovalMode: (m) => { mode = m; return q.setPermissionMode(MODES[m]) },
       setModel: (m) => q.setModel(m),
       setEffort: (e) => q.applyFlagSettings({ effortLevel: (e as EffortLevel | undefined) ?? null }),
       info: async () => { const r = await q.initializationResult(); return { models: r.models.map(({ value, displayName, description, supportedEffortLevels }) => ({ value, displayName, description, effortLevels: supportedEffortLevels })), account: r.account ?? null } },
