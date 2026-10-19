@@ -5,8 +5,13 @@ import { useActive, useStore } from '../stores/store'
 import { Turns } from './ChatView'
 import { Logo, isActive, launches, taskName, type Tool } from './agents'
 
-/** One clock per list, re-rendering every second for the elapsed/ago columns. */
-const useNow = () => { const [now, set] = useState(Date.now()); useEffect(() => { const t = setInterval(() => set(Date.now()), 1000); return () => clearInterval(t) }, []); return now }
+/** One clock per list, re-rendering every second for the elapsed/ago columns — in the engine's time, which may be another machine's. */
+const useNow = () => {
+  const offset = useStore((s) => s.transport?.clockOffset ?? 0)
+  const [now, set] = useState(Date.now())
+  useEffect(() => { const t = setInterval(() => set(Date.now()), 1000); return () => clearInterval(t) }, [])
+  return now + offset
+}
 const elapsed = (from: number | undefined, now: number) => { if (!from) return ''; const ms = now - from; return ms < 60_000 ? `${Math.floor(ms / 1000)}s` : `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000).toString().padStart(2, '0')}s` }
 const ago = (at: number | undefined, now: number) => { if (!at) return ''; const m = Math.floor((now - at) / 60_000); return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.floor(m / 60)}h ago` }
 const modelName = (id?: string) => { const m = /^claude-([a-z]+)-(\d+)-(\d+)/.exec(id ?? ''); return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}` : id ?? '' }

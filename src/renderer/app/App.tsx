@@ -19,6 +19,7 @@ export default function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+  useEffect(() => { document.title = transport?.kind === 'remote' ? `orc — ${transport.host}` : 'orc' }, [transport?.host])
   if (!transport || transport.phase !== 'ready') return <div className="flex h-full">{transport && <Connect t={transport} />}</div>
   return (
     <div className="flex h-full">

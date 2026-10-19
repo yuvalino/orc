@@ -16,7 +16,7 @@ const btn = 'flex items-center gap-[5px] rounded-md px-2.5 py-[5px] text-[13px] 
 
 export function Composer() {
   const { session, project } = useActive()
-  const { projects, send, interrupt, update, newChat, status, draft, setDraft, defaults, setDefaults } = useStore()
+  const { projects, send, interrupt, update, newChat, status, draft, setDraft, defaults, setDefaults, addProject, openPalette } = useStore()
   const ref = useRef<HTMLTextAreaElement>(null)
   const running = session ? ['running', 'starting'].includes(status[session.id]?.state ?? '') : false
   const mode = session?.approvalMode ?? defaults.approvalMode
@@ -24,7 +24,8 @@ export function Composer() {
   const projectItems = [
     { label: 'No project', detail: 'Runs in your home folder', active: !project, onSelect: () => newChat(null) },
     ...projects.map((p) => ({ label: projectName(p)!, detail: p.path, active: p.id === project?.id, onSelect: () => newChat(p.id) })),
-    { label: 'Open folder…', onSelect: () => window.orc.projects.add().then((p) => p && newChat(p.id)) }
+    { label: 'Open folder…', onSelect: addProject },
+    { label: 'Remote…', detail: 'Work on another machine over ssh', onSelect: () => openPalette('hosts') }
   ]
 
   useEffect(() => {

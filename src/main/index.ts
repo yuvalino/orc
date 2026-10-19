@@ -2,24 +2,25 @@ import { app, BrowserWindow, Menu, shell } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { configureClaude } from '../server/codecs/claude/codec'
-import { JsonFile, setDataDir } from '../server/store'
+import { setDataDir } from '../server/store'
 import { push, registerIpc } from './ipc'
+import { Remote } from './remote'
+import { remoteHost, shellStore } from './shell'
 import { boot } from './transport'
 
-// One instance per target per machine: the single-instance lock is keyed on userData, so tests and dev
-// instances get their own (ORC_USER_DATA_DIR, defaulting to the engine's ORC_DATA_DIR) and never collide.
-const userData = process.env.ORC_USER_DATA_DIR || process.env.ORC_DATA_DIR
+// One instance per target per machine: the single-instance lock is keyed on userData, so each remote host gets its own,
+// and tests/dev instances get theirs (ORC_USER_DATA_DIR, defaulting to the engine's ORC_DATA_DIR) and never collide.
+const userData = process.env.ORC_USER_DATA_DIR || process.env.ORC_DATA_DIR || (remoteHost && join(app.getPath('userData'), `remote-${remoteHost.replace(/[^\w.-]/g, '_')}`))
 if (userData) app.setPath('userData', userData)
 if (!app.requestSingleInstanceLock()) app.quit()
 setDataDir(process.env.ORC_DATA_DIR || app.getPath('userData'))
 // The SDK's bundled binary can't be spawned from inside app.asar; point it at the asarUnpack'ed copy when packaged.
 const unpacked = join(process.resourcesPath ?? '', 'app.asar.unpacked/node_modules/@anthropic-ai', `claude-agent-sdk-${process.platform}-${process.arch}/claude`)
-configureClaude({ version: app.getVersion(), binaryPath: app.isPackaged && existsSync(unpacked) ? unpacked : undefined })
-/** Shell-local state (window bounds): under userData, never in the engine's settings, which may live on another machine. */
-const shellStore = new JsonFile<Record<string, unknown>>(() => join(app.getPath('userData'), 'shell.json'), {})
+configureClaude({ version: __ORC_VERSION__, binaryPath: app.isPackaged && existsSync(unpacked) ? unpacked : undefined })
 let secondInstances = 0
 app.on('second-instance', () => { secondInstances++; const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus() } })
 Object.assign(globalThis, { orcSecondInstances: () => secondInstances })
+const remote = remoteHost ? new Remote(remoteHost, push) : null
 
 function createWindow(): void {
   const saved = (shellStore.read().window as Electron.Rectangle | undefined) ?? { width: 1274, height: 797, x: undefined, y: undefined }
@@ -27,6 +28,7 @@ function createWindow(): void {
     ...saved,
     minWidth: 900,
     minHeight: 560,
+    title: remoteHost ? `orc — ${remoteHost}` : 'orc',
     backgroundColor: '#181818',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 14 },
@@ -55,9 +57,11 @@ function buildMenu(): void {
 
 app.whenReady().then(() => {
   buildMenu()
-  registerIpc()
-  boot()
+  registerIpc(remote ?? undefined)
+  if (remote) remote.connect(); else boot()
   createWindow()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())
 })
-app.on('window-all-closed', () => process.platform !== 'darwin' && app.quit())
+// A remote instance lives as long as its window: closing it ends ssh and the server with it. Local keeps macOS's stay-in-Dock behaviour.
+app.on('window-all-closed', () => (remote || process.platform !== 'darwin') && app.quit())
+app.on('before-quit', () => remote?.shutdown())

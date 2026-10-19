@@ -5,14 +5,14 @@ import { Menu } from '../lib/Menu'
 import { sessionTitle, useStore } from '../stores/store'
 
 export function Sidebar() {
-  const { projects, sessions, newChat, openPalette } = useStore()
+  const { projects, sessions, newChat, openPalette, transport } = useStore()
   const recent = [...sessions].sort((a, b) => b.lastActivityAt - a.lastActivityAt)
   const pinned = recent.filter((s) => s.isPinned)
   return (
     <aside className="flex w-[292px] shrink-0 flex-col border-r border-line bg-bg-sidebar">
       {/* Traffic lights sit in this header (hiddenInset), hence the top padding and drag region. */}
       <div className="drag flex items-center justify-between pb-1.5 pl-4 pr-3 pt-10">
-        <span className="text-[16px] font-semibold text-fg-bright">orc</span>
+        <span className="flex items-center gap-2 text-[16px] font-semibold text-fg-bright">orc{transport?.kind === 'remote' && <span className="rounded-md bg-accent/20 px-1.5 py-0.5 text-[11px] font-medium text-[#93b4ff]">ssh: {transport.host}</span>}</span>
         <button onClick={() => openPalette('chats')} title="Search chats (⌘K)" className="no-drag flex size-8 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><Search size={18} strokeWidth={1.8} /></button>
       </div>
       <button onClick={() => newChat()} className="mb-1 mt-1.5 flex w-full items-center gap-2 py-[5px] pl-[18px] pr-4 text-[14px] text-fg-bright hover:bg-bg-hover"><SquarePen size={15} /> New chat</button>
@@ -38,7 +38,8 @@ const Section = ({ label, action, first, children }: { label: string; action?: R
 const Empty = ({ children }: { children: React.ReactNode }) => <div className="px-2.5 py-1 text-[13px] text-fg-3">{children}</div>
 
 function AddProject() {
-  return <button onClick={() => window.orc.projects.add()} title="Add project" className="rounded p-0.5 text-fg-3 opacity-0 hover:text-fg group-hover:opacity-100"><Plus size={14} /></button>
+  const addProject = useStore((s) => s.addProject)
+  return <button onClick={addProject} title="Add project" className="rounded p-0.5 text-fg-3 opacity-0 hover:text-fg group-hover:opacity-100"><Plus size={14} /></button>
 }
 
 /** Running → spinner; finished while you were elsewhere → dot; waiting on you → amber dot. */

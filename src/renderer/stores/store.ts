@@ -17,7 +17,7 @@ interface State {
   models: ModelOption[]
   account: Account | null
   draft: string
-  palette: null | 'chats' | 'files'
+  palette: null | 'chats' | 'files' | 'hosts' | 'folders'
   panel: null | { toolUseId: string | null } // Subagents panel: closed, the lists, or one agent's thread
   defaults: Defaults
   transport: TransportState | null // null until the first state arrives
@@ -33,8 +33,9 @@ interface State {
   answer(askId: string, answer: AskAnswer): Promise<void>
   update(id: string, patch: Parameters<Window['orc']['sessions']['update']>[1]): Promise<void>
   setDraft(text: string): void
-  openPalette(mode?: 'chats' | 'files'): void
+  openPalette(mode?: State['palette']): void
   closePalette(): void
+  addProject(): void // native folder dialog locally; the folder picker on a remote host
 }
 
 const api = () => window.orc
@@ -113,7 +114,8 @@ export const useStore = create<State>((set, get) => ({
   async update(id, patch) { await api().sessions.update(id, patch) },
   setDraft: (draft) => set({ draft }),
   openPalette: (mode = 'chats') => set({ palette: mode }),
-  closePalette: () => set({ palette: null })
+  closePalette: () => set({ palette: null }),
+  addProject() { if (get().transport?.kind === 'remote') set({ palette: 'folders' }); else api().projects.add().then((p) => p && get().newChat(p.id)) }
 }))
 
 export const sessionTitle = (s: Session) => s.title ?? s.autoTitle ?? 'New chat'

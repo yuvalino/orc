@@ -9,13 +9,13 @@ export interface Ctx { app: ElectronApplication; page: Page; dataDir: string; us
  * Launch orc against the fake SDK with an optional seeded project and chats. Every instance gets its own userData
  * (Electron's single-instance lock is keyed on it); `dataDir` can be shared to exercise the engine lock.
  */
-export async function launch(opts: { project?: boolean; chats?: { id: string; title: string; pinned?: boolean }[]; settings?: Record<string, unknown>; live?: boolean; dataDir?: string; userData?: string; waitFor?: 'composer' | 'none' } = {}): Promise<Ctx> {
+export async function launch(opts: { project?: boolean; chats?: { id: string; title: string; pinned?: boolean }[]; settings?: Record<string, unknown>; live?: boolean; dataDir?: string; userData?: string; waitFor?: 'composer' | 'none'; seed?: boolean; remote?: string; env?: Record<string, string> } = {}): Promise<Ctx> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'orc-'))
   const userData = opts.userData ?? mkdtempSync(join(tmpdir(), 'orc-ud-'))
   const projectPath = mkdtempSync(join(tmpdir(), 'orc-project-'))
   writeFileSync(join(projectPath, 'hello.txt'), 'hello from the fixture project\n')
   if (opts.settings) writeFileSync(join(dataDir, 'settings.json'), JSON.stringify(opts.settings))
-  if (opts.project !== false && !opts.dataDir) {
+  if (opts.project !== false && (opts.seed ?? !opts.dataDir)) {
     writeFileSync(join(dataDir, 'projects.json'), JSON.stringify([{ id: 'p1', path: projectPath, name: 'Fixture Project', isPinned: false, createdAt: 1 }]))
     writeFileSync(join(dataDir, 'sessions.json'), JSON.stringify((opts.chats ?? []).map((c, i) => ({
       id: c.id, projectId: 'p1', codec: 'claude', title: c.title, autoTitle: null, isPinned: !!c.pinned, createdAt: i, lastActivityAt: i, approvalMode: 'ask', model: null
@@ -23,8 +23,8 @@ export async function launch(opts: { project?: boolean; chats?: { id: string; ti
   }
   mkdirSync(join(__dirname, 'screenshots'), { recursive: true })
   const app = await electron.launch({
-    args: [join(__dirname, '../out/main/index.js')],
-    env: { ...process.env, ORC_DATA_DIR: dataDir, ORC_USER_DATA_DIR: userData, ...(opts.live ? {} : { ORC_FAKE_SDK: join(__dirname, 'fixtures') }) }
+    args: [join(__dirname, '../out/main/index.js'), ...(opts.remote ? ['--remote', opts.remote] : [])],
+    env: { ...process.env, ORC_DATA_DIR: dataDir, ORC_USER_DATA_DIR: userData, ...(opts.live ? {} : { ORC_FAKE_SDK: join(__dirname, 'fixtures') }), ...opts.env }
   })
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')

@@ -42,7 +42,13 @@ export interface OrcApi {
   answerAsk(askId: string, answer: AskAnswer): Promise<void>
   codecInfo(): Promise<{ models: ModelOption[]; account: Account | null }>
   settings: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }
-  transport: { state(): Promise<TransportState>; takeover(): Promise<void>; reconnect(): Promise<void> }
+  transport: {
+    state(): Promise<TransportState>
+    takeover(): Promise<void>
+    reconnect(): Promise<void>
+    hosts(): Promise<string[]> // recent + ~/.ssh/config
+    open(host: string): Promise<void> // a new window (instance) for that host
+  }
   on<K extends keyof PushEvents>(channel: K, cb: (payload: PushEvents[K]) => void): () => void
 }
 

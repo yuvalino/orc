@@ -13,7 +13,7 @@ const api: OrcApi = {
   answerAsk: call('asks.answer'),
   codecInfo: call('codec.info'),
   settings: { get: call('settings.get'), set: call('settings.set') },
-  transport: { state: call('transport.state'), takeover: call('transport.takeover'), reconnect: call('transport.reconnect') },
+  transport: { state: call('transport.state'), takeover: call('transport.takeover'), reconnect: call('transport.reconnect'), hosts: call('transport.hosts'), open: call('transport.open') },
   on: (channel, cb) => {
     const h = (_: unknown, payload: unknown) => cb(payload as never)
     ipcRenderer.on(channel, h)
