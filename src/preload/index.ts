@@ -4,7 +4,7 @@ import type { OrcApi } from '@shared/api'
 const call = (ch: string) => (...args: unknown[]) => ipcRenderer.invoke(ch, ...args)
 
 const api: OrcApi = {
-  projects: { list: call('projects.list'), add: call('projects.add'), remove: call('projects.remove'), files: call('projects.files') },
+  projects: { list: call('projects.list'), add: call('projects.add'), remove: call('projects.remove'), files: call('projects.files'), browse: call('projects.browse') },
   sessions: {
     list: call('sessions.list'), create: call('sessions.create'), open: call('sessions.open'),
     send: call('sessions.send'), interrupt: call('sessions.interrupt'), stopTask: call('sessions.stopTask'), update: call('sessions.update'),

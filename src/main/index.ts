@@ -1,7 +1,9 @@
 import { app, BrowserWindow, Menu, shell } from 'electron'
+import { existsSync } from 'fs'
 import { join } from 'path'
+import { configureClaude } from '../server/codecs/claude/codec'
+import { JsonFile, setDataDir } from '../server/store'
 import { push, registerIpc } from './ipc'
-import { settings } from './store'
 import { boot } from './transport'
 
 // One instance per target per machine: the single-instance lock is keyed on userData, so tests and dev
@@ -9,12 +11,18 @@ import { boot } from './transport'
 const userData = process.env.ORC_USER_DATA_DIR || process.env.ORC_DATA_DIR
 if (userData) app.setPath('userData', userData)
 if (!app.requestSingleInstanceLock()) app.quit()
+setDataDir(process.env.ORC_DATA_DIR || app.getPath('userData'))
+// The SDK's bundled binary can't be spawned from inside app.asar; point it at the asarUnpack'ed copy when packaged.
+const unpacked = join(process.resourcesPath ?? '', 'app.asar.unpacked/node_modules/@anthropic-ai', `claude-agent-sdk-${process.platform}-${process.arch}/claude`)
+configureClaude({ version: app.getVersion(), binaryPath: app.isPackaged && existsSync(unpacked) ? unpacked : undefined })
+/** Shell-local state (window bounds): under userData, never in the engine's settings, which may live on another machine. */
+const shellStore = new JsonFile<Record<string, unknown>>(() => join(app.getPath('userData'), 'shell.json'), {})
 let secondInstances = 0
 app.on('second-instance', () => { secondInstances++; const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus() } })
 Object.assign(globalThis, { orcSecondInstances: () => secondInstances })
 
 function createWindow(): void {
-  const saved = (settings.get('window') as Electron.Rectangle | undefined) ?? { width: 1274, height: 797, x: undefined, y: undefined }
+  const saved = (shellStore.read().window as Electron.Rectangle | undefined) ?? { width: 1274, height: 797, x: undefined, y: undefined }
   const win = new BrowserWindow({
     ...saved,
     minWidth: 900,
@@ -27,7 +35,7 @@ function createWindow(): void {
   })
   win.once('ready-to-show', () => win.show())
   let t: ReturnType<typeof setTimeout>
-  const save = () => { clearTimeout(t); t = setTimeout(() => !win.isDestroyed() && settings.set('window', win.getBounds()), 400) }
+  const save = () => { clearTimeout(t); t = setTimeout(() => !win.isDestroyed() && shellStore.write({ ...shellStore.read(), window: win.getBounds() }), 400) }
   win.on('resize', save).on('move', save)
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)

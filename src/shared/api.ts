@@ -23,9 +23,10 @@ export interface TransportState {
 export interface OrcApi {
   projects: {
     list(): Promise<Project[]>
-    add(): Promise<Project | null>
+    add(path?: string): Promise<Project | null> // no path: the desktop shows its folder dialog (local targets only)
     remove(id: string): Promise<void>
     files(id: string, query: string): Promise<string[]>
+    browse(path?: string): Promise<{ path: string; dirs: string[]; parent: string | null }> // the remote folder picker
   }
   sessions: {
     list(): Promise<Session[]>

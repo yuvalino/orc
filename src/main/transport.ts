@@ -1,8 +1,8 @@
 import { app, BrowserWindow } from 'electron'
 import type { TransportState } from '@shared/api'
 import { Lock } from '../server/lock'
+import { dataDir } from '../server/store'
 import { engine, push } from './ipc'
-import { dataDir } from './store'
 
 /**
  * The local transport: this window's engine is in-process, but it only runs once this process holds the

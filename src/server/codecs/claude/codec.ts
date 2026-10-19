@@ -1,8 +1,5 @@
 import type { EffortLevel, PermissionMode, PermissionResult, PermissionUpdate, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import { app } from 'electron'
-import { existsSync } from 'fs'
 import { readFile } from 'fs/promises'
-import { join } from 'path'
 import type { ApprovalMode, Ask, AskAnswer, Item } from '@shared/types'
 import { applyPatch } from '@shared/types'
 import type { Codec, CodecSession, OpenParams, Sink } from '../types'
@@ -11,12 +8,9 @@ import { loadSdk } from './sdk'
 
 const MODES: Record<ApprovalMode, PermissionMode> = { 'read-only': 'plan', ask: 'default', auto: 'auto', 'accept-edits': 'acceptEdits', 'full-access': 'bypassPermissions' }
 
-/** The SDK's bundled binary can't be spawned from inside app.asar; point it at the asarUnpack'ed copy when packaged. */
-function bundledBinary(): string | undefined {
-  if (!app.isPackaged) return undefined
-  const bin = join(process.resourcesPath, 'app.asar.unpacked/node_modules/@anthropic-ai', `claude-agent-sdk-${process.platform}-${process.arch}/claude`)
-  return existsSync(bin) ? bin : undefined
-}
+/** Set once by whoever hosts the engine (desktop shell or orc-server): where the `claude` binary is when the SDK can't find its own, and what to call ourselves. */
+const cfg: { binaryPath?: string; version: string } = { version: '0.0.0' }
+export const configureClaude = (c: Partial<typeof cfg>): void => { Object.assign(cfg, c) }
 
 /** Unbounded async queue: the SDK's streaming-input iterable, fed one user message per send(). */
 function inputQueue<T>() {
@@ -75,8 +69,8 @@ export class ClaudeCodec implements Codec {
       allowedTools: ['Grep', 'Glob', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'], // search and checklist tools are omitted unless listed; all side-effect free
       systemPrompt: { type: 'preset', preset: 'claude_code' },
       settingSources: ['user', 'project', 'local'],
-      env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: `orc/${app.getVersion()}` },
-      pathToClaudeCodeExecutable: bundledBinary(),
+      env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: `orc/${cfg.version}` },
+      pathToClaudeCodeExecutable: cfg.binaryPath,
       perTaskStopAffordance: true,
       settings: { bashEditDiffEnabled: true }, // Bash results carry a diff of the files the command changed
       canUseTool: async (toolName, toolInput, opts) => toResult(await sink.ask(toAsk(toolName, toolInput, opts), opts.signal), toolInput, opts.suggestions ?? [], mode)

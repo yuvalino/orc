@@ -1,30 +1,40 @@
-import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { homedir } from 'os'
 import { join } from 'path'
 import type { Project, Session } from '@shared/types'
 
-export const dataDir = (): string => process.env.ORC_DATA_DIR || app.getPath('userData')
+/** Electron's userData path for an app named "orc", computed without Electron so a headless server lands on the same files. */
+export function defaultDataDir(): string {
+  const h = homedir()
+  if (process.platform === 'darwin') return join(h, 'Library', 'Application Support', 'orc')
+  if (process.platform === 'win32') return join(process.env.APPDATA ?? join(h, 'AppData', 'Roaming'), 'orc')
+  return join(process.env.XDG_CONFIG_HOME ?? join(h, '.config'), 'orc')
+}
+let dir = process.env.ORC_DATA_DIR || defaultDataDir()
+export const dataDir = (): string => dir
+export const setDataDir = (d: string): void => { dir = d }
 
-class JsonFile<T> {
+/** A JSON file read once and written atomically. */
+export class JsonFile<T> {
   private cache: T | undefined
-  constructor(private name: string, private empty: T) {}
-  private get path() { return join(dataDir(), this.name) }
+  constructor(private file: () => string, private empty: T) {}
   read(): T {
     if (this.cache !== undefined) return this.cache
-    try { this.cache = JSON.parse(readFileSync(this.path, 'utf-8')) as T } catch { this.cache = this.empty }
+    try { this.cache = JSON.parse(readFileSync(this.file(), 'utf-8')) as T } catch { this.cache = this.empty }
     return this.cache
   }
   write(data: T): void {
     this.cache = data
-    mkdirSync(dataDir(), { recursive: true })
-    writeFileSync(this.path + '.tmp', JSON.stringify(data, null, 2))
-    renameSync(this.path + '.tmp', this.path)
+    const path = this.file()
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path + '.tmp', JSON.stringify(data, null, 2))
+    renameSync(path + '.tmp', path)
   }
 }
 
-const projectsFile = new JsonFile<Project[]>('projects.json', [])
-const sessionsFile = new JsonFile<Session[]>('sessions.json', [])
-const settingsFile = new JsonFile<Record<string, unknown>>('settings.json', {})
+const projectsFile = new JsonFile<Project[]>(() => join(dataDir(), 'projects.json'), [])
+const sessionsFile = new JsonFile<Session[]>(() => join(dataDir(), 'sessions.json'), [])
+const settingsFile = new JsonFile<Record<string, unknown>>(() => join(dataDir(), 'settings.json'), {})
 
 export const projects = {
   list: () => projectsFile.read(),
