@@ -45,7 +45,12 @@ export const useStore = create<State>((set, get) => ({
     api().projects.list().then((projects) => set((s) => ({ projects, draftProjectId: s.draftProjectId ?? projects[0]?.id ?? null }))) // a fresh chat starts in a project when one exists
     Promise.all((['approvalMode', 'model', 'effort'] as const).map((k) => api().settings.get(k))).then(([approvalMode, model, effort]) =>
       set((s) => ({ defaults: { approvalMode: (approvalMode as ApprovalMode) ?? s.defaults.approvalMode, model: (model as string) ?? null, effort: (effort as string) ?? null } })))
-    api().sessions.list().then((sessions) => set({ sessions }))
+    api().sessions.list().then(async (sessions) => {
+      set({ sessions })
+      // Indicators for chats that were already running (e.g. after a renderer reload); their status is only pushed on change.
+      const pairs = await Promise.all(sessions.map(async (x) => [x.id, await api().sessions.status(x.id)] as const))
+      set((s) => ({ status: { ...Object.fromEntries(pairs.filter(([, st]) => st.state !== 'closed')), ...s.status } }))
+    })
     api().on('projects:changed', (projects) => set((s) => ({ projects, draftProjectId: projects.some((p) => p.id === s.draftProjectId) ? s.draftProjectId : projects[0]?.id ?? null }))) // the drafted-into project may have been removed
     api().on('sessions:changed', (sessions) => set((s) => ({ sessions, activeId: sessions.some((x) => x.id === s.activeId) ? s.activeId : null }))) // the open chat may have been deleted
     api().on('transcript:patch', ({ sessionId, patch }) =>

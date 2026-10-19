@@ -75,6 +75,7 @@ export class Engine {
     this.setStatus(id, e, { state: 'running' }) // kept as requires_action while an ask is pending; see setStatus
     this.touch(id)
     e.live!.send(text, uuid)
+    e.hasTranscript = true // the CLI persists the session on the first prompt; a restart must resume it, not reuse the id
   }
 
   private async start(s: Session, e: Entry): Promise<void> {
@@ -135,7 +136,7 @@ export class Engine {
 
   async interrupt(id: string): Promise<void> {
     const e = this.entries.get(id)
-    if (e?.live) { e.stopping = true; await e.live.interrupt() }
+    if (e?.live && e.status.state === 'running') { e.stopping = true; await e.live.interrupt() }
   }
 
   async setApprovalMode(id: string, mode: ApprovalMode, propagate = true): Promise<void> {

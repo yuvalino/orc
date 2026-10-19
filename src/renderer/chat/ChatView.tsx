@@ -36,6 +36,7 @@ export function ChatView() {
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
+  useEffect(() => { stick.current = true }, [session?.id]) // a freshly opened chat starts at its latest message
   useEffect(() => { if (stick.current) ref.current?.scrollTo({ top: ref.current.scrollHeight }) }, [items])
   const onScroll = () => { const el = ref.current!; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60 }
 

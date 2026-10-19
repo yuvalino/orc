@@ -32,7 +32,7 @@ export function Composer() {
     el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 220) + 'px'
   }, [draft])
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && running && !useStore.getState().palette) interrupt() } // Esc closes the palette first
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && running && !useStore.getState().palette && !(e.target instanceof HTMLInputElement)) interrupt() } // Esc closes the palette or cancels an inline edit first
     window.addEventListener('keydown', onKey, true) // capture: runs before the palette closes itself
     return () => window.removeEventListener('keydown', onKey, true)
   }, [running])
