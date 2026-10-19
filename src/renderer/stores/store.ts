@@ -47,7 +47,7 @@ export const useStore = create<State>((set, get) => ({
       set((s) => ({ defaults: { approvalMode: (approvalMode as ApprovalMode) ?? s.defaults.approvalMode, model: (model as string) ?? null, effort: (effort as string) ?? null } })))
     api().sessions.list().then((sessions) => set({ sessions }))
     api().on('projects:changed', (projects) => set({ projects }))
-    api().on('sessions:changed', (sessions) => set({ sessions }))
+    api().on('sessions:changed', (sessions) => set((s) => ({ sessions, activeId: sessions.some((x) => x.id === s.activeId) ? s.activeId : null }))) // the open chat may have been deleted
     api().on('transcript:patch', ({ sessionId, patch }) =>
       set((s) => ({ transcripts: { ...s.transcripts, [sessionId]: applyPatch(s.transcripts[sessionId] ?? [], patch) } })))
     api().on('session:status', ({ sessionId, status }) => {
@@ -66,8 +66,11 @@ export const useStore = create<State>((set, get) => ({
   async select(id) {
     set((s) => { const unread = { ...s.unread }; delete unread[id]; return { activeId: id, unread, palette: null, panel: s.panel && { toolUseId: null } } })
     if (!get().transcripts[id]) {
-      const [items, status] = await Promise.all([api().sessions.open(id), api().sessions.status(id)])
-      set((s) => ({ transcripts: { ...s.transcripts, [id]: items }, status: { ...s.status, [id]: status } }))
+      // Each reply is stored in its own microtask so a patch pushed in between can't be overwritten by a stale snapshot.
+      const items = await api().sessions.open(id)
+      set((s) => ({ transcripts: { ...s.transcripts, [id]: items } }))
+      const status = await api().sessions.status(id)
+      set((s) => ({ status: { ...s.status, [id]: status } }))
     }
   },
 

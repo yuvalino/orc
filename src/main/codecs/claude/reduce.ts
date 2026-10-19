@@ -102,9 +102,12 @@ export function reduce(st: ReduceState, msg: SDKMessage): Out {
       }
       const text = textOf(c)
       if (results.length || !text || m.isSynthetic) break
-      // The CLI's own relay prompts (saved rows lose the isSynthetic flag) only mark where a follow-up turn begins.
-      if (/^<(task-notification|system-reminder)\b/.test(text)) patches.push({ op: 'upsert', item: { kind: 'turn_end', id: m.uuid ?? crypto.randomUUID(), durationMs: 0, isError: false } })
-      else patches.push({ op: 'upsert', item: { kind: 'user', id: m.uuid ?? crypto.randomUUID(), text, parent } }) // with parent: the prompt a subagent was given
+      // The CLI's own relay prompts (saved rows lose the isSynthetic flag) only mark where a follow-up turn begins — and say how the task ended.
+      if (/^<(task-notification|system-reminder)\b/.test(text)) {
+        patches.push({ op: 'upsert', item: { kind: 'turn_end', id: m.uuid ?? crypto.randomUUID(), durationMs: 0, isError: false } })
+        const rel = /<tool-use-id>(\S+?)<\/tool-use-id>[\s\S]*?<status>(\w+)<\/status>/.exec(text), id = rel && st.toolItems[rel[1]]
+        if (id && rel[2] in TASK_END) { const s = rel[2] as keyof typeof TASK_END; setTask(st, patches, id, { status: s }); patches.push({ op: 'update', id, partial: { status: TASK_END[s] } }) }
+      } else patches.push({ op: 'upsert', item: { kind: 'user', id: m.uuid ?? crypto.randomUUID(), text, parent } }) // with parent: the prompt a subagent was given
       break
     }
     case 'result': {

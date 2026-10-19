@@ -63,7 +63,7 @@ export class ClaudeCodec implements Codec {
       cwd: p.cwd,
       ...(p.resume ? { resume: p.sessionId } : { sessionId: p.sessionId }),
       permissionMode: MODES[p.approvalMode],
-      allowDangerouslySkipPermissions: p.approvalMode === 'full-access',
+      allowDangerouslySkipPermissions: true, // only permits bypass mode; the mode itself is set above and can be switched to it later
       model: p.model,
       effort: p.effort as EffortLevel | undefined,
       includePartialMessages: true,
@@ -121,16 +121,17 @@ export class ClaudeCodec implements Codec {
       }
     } catch { /* no transcript yet */ }
     // Saved rows carry no task events or tool_use_result, so tasks are rebuilt from the tool itself; a tool with no result was cut off when the process died.
-    return items.map((i) => {
+    return Promise.all(items.map(async (i) => {
       if (i.kind !== 'tool') return i
-      const bg = /^Command running in background with ID: (\w+)/.exec(i.result?.text ?? '')
+      const bg = /^Command running in background with ID: (\w+)\. Output is being written to: (\S+?)\.?(\s|$)/.exec(i.result?.text ?? '')
       if (i.name === 'Agent' || i.name === 'Task' || bg) {
         const done = i.status === 'done', startedAt = st.times[i.toolUseId] ?? 0, endedAt = st.times[`${i.toolUseId}:end`] ?? (done ? startedAt : undefined)
         const status = done ? 'done' : i.status === 'error' ? 'error' : 'interrupted'
-        return { ...i, status, task: { ...i.task, id: bg?.[1] ?? agentIds[i.toolUseId] ?? i.toolUseId, status: done ? 'completed' : status === 'error' ? 'failed' : 'stopped', background: !!bg || i.result?.text?.startsWith('Async agent') === true, startedAt, endedAt } }
+        const text = bg ? await readFile(bg[2], 'utf-8').catch(() => '') : '' // the command's output file, still on disk
+        return { ...i, status, result: text && i.result ? { ...i.result, text: text.slice(-64_000) } : i.result, task: { ...i.task, id: bg?.[1] ?? agentIds[i.toolUseId] ?? i.toolUseId, status: done ? 'completed' : status === 'error' ? 'failed' : 'stopped', background: !!bg || i.result?.text?.startsWith('Async agent') === true, startedAt, endedAt, ...(i.task?.status && i.task.status !== 'running' ? { status: i.task.status } : {}) } }
       }
       return i.status === 'running' ? { ...i, status: 'interrupted' } : i
-    })
+    }))
   }
 
   async sessionInfo(sessionId: string, cwd: string) {

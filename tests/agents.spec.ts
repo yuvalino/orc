@@ -60,7 +60,8 @@ test('background command: active after the turn, settles by notification, relay 
   await expect(page.getByText('Active · 1')).toBeVisible()
   await shot(page, 'background-active')
   await expect(page.getByText('Done · 1')).toBeVisible() // the notification arrives on its own
-  await expect(page.getByText(/^Worked for/)).toHaveCount(2) // the CLI's follow-up turn
+  await expect(page.locator('[title="Stop (Esc)"]')).toBeVisible() // the CLI's follow-up turn counts as running
+  await expect(page.getByText(/^Worked for/)).toHaveCount(2)
   await expect(page.locator('.bg-bubble')).toHaveCount(1) // its relay prompt is not a user message
   await expect(page.locator('textarea')).toBeEnabled()
   await page.getByText('Sleep 4 seconds then print finished').click()

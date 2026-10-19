@@ -61,7 +61,7 @@ function ProjectRow({ p, chats }: { p: Project; chats: Session[] }) {
         <Indicator ids={chats.map((c) => c.id)} />
         <Menu align="right" className="ml-auto opacity-0 group-hover:opacity-100"
           trigger={<button className="rounded p-0.5 text-fg-3 hover:text-fg"><Ellipsis size={14} /></button>}
-          items={[{ label: 'New chat', onSelect: () => newChat(p.id) }, { label: 'Remove project', danger: true, onSelect: () => window.orc.projects.remove(p.id) }]} />
+          items={[{ label: 'New chat', onSelect: () => newChat(p.id) }, { label: 'Remove project', danger: true, onSelect: () => confirm(`Remove "${p.name ?? p.path.split('/').pop()}" and its ${chats.length} chat${chats.length === 1 ? '' : 's'}?`) && window.orc.projects.remove(p.id) }]} />
       </div>
       {chats.slice(0, 5).map((s) => <ChatRow key={s.id} s={s} nested />)}
     </div>

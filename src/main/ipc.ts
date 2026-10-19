@@ -24,7 +24,10 @@ const handlers: Handlers = {
       push('projects:changed', projects.list())
       return p
     },
-    remove: async (id) => { projects.remove(id); push('projects:changed', projects.list()) },
+    remove: async (id) => {
+      for (const s of sessions.list()) if (s.projectId === id) await engine.remove(s.id) // chats can't run without their folder
+      projects.remove(id); push('projects:changed', projects.list())
+    },
     files: async (id, query) => { const p = projects.find(id); return p ? listFiles(p.path, query.toLowerCase()) : [] }
   },
   sessions: {

@@ -1,5 +1,5 @@
 import { homedir } from 'os'
-import type { ApprovalMode, AskAnswer, Item, Patch, Session, SessionStatus, ToolStatus } from '@shared/types'
+import type { ApprovalMode, AskAnswer, Item, Patch, RuntimeState, Session, SessionStatus, ToolStatus } from '@shared/types'
 import { applyPatch } from '@shared/types'
 import type { PushEvents } from '@shared/api'
 import type { CodecSession } from './codecs/types'
@@ -17,6 +17,8 @@ interface Entry {
   asks: Map<string, { resolve: (a: AskAnswer) => void; toolUseId: string }>
   idleTimer?: ReturnType<typeof setTimeout>
   stopping?: boolean
+  gen: number // which codec process the sink callbacks belong to; a late 'closed' from an old one is ignored
+  resumeState?: RuntimeState // the state an ask interrupted, restored once every ask is answered
 }
 
 export type Push = <K extends keyof PushEvents>(channel: K, payload: PushEvents[K]) => void
@@ -24,6 +26,7 @@ export type Push = <K extends keyof PushEvents>(channel: K, payload: PushEvents[
 /** Owns every open conversation: one long-lived codec session each, the transcript, and pending asks. */
 export class Engine {
   private entries = new Map<string, Entry>()
+  private opening = new Map<string, Promise<Item[]>>() // in-flight transcript loads, so two opens share one entry
   constructor(private push: Push) {}
 
   private session(id: string): Session {
@@ -39,15 +42,21 @@ export class Engine {
   }
 
   async open(id: string): Promise<Item[]> {
-    let e = this.entries.get(id)
-    if (!e) {
-      const s = this.session(id)
-      const items = await getCodec(s.codec).loadTranscript(id, this.cwd(s))
-      e = { items, hasTranscript: items.length > 0, status: { state: 'closed' }, live: null, asks: new Map() }
-      this.entries.set(id, e)
-      if (e.items.length && !s.autoTitle) void this.refreshTitle(id)
+    const e = this.entries.get(id)
+    if (e) return e.items
+    let p = this.opening.get(id)
+    if (!p) {
+      p = (async () => {
+        const s = this.session(id)
+        const items = await getCodec(s.codec).loadTranscript(id, this.cwd(s))
+        this.entries.set(id, { items, hasTranscript: items.length > 0, status: { state: 'closed' }, live: null, asks: new Map(), gen: 0 })
+        if (items.length && !s.autoTitle) void this.refreshTitle(id)
+        return items
+      })()
+      this.opening.set(id, p)
+      p.finally(() => this.opening.delete(id)).catch(() => {})
     }
-    return e.items
+    return p
   }
 
   status(id: string): SessionStatus { return this.entries.get(id)?.status ?? { state: 'closed' } }
@@ -63,7 +72,7 @@ export class Engine {
         return
       }
     }
-    this.setStatus(id, e, { state: 'running' })
+    this.setStatus(id, e, { state: 'running' }) // kept as requires_action while an ask is pending; see setStatus
     this.touch(id)
     e.live!.send(text, uuid)
   }
@@ -75,15 +84,18 @@ export class Engine {
       if (victim) this.close(victim[0])
     }
     this.setStatus(s.id, e, { state: 'starting' })
+    const gen = ++e.gen
     e.live = await getCodec(s.codec).open(
       { sessionId: s.id, cwd: this.cwd(s), resume: e.hasTranscript, approvalMode: s.approvalMode, model: s.model ?? undefined, effort: s.effort ?? undefined },
       {
-        patch: (p) => this.apply(s.id, e, p),
-        status: (st) => this.setStatus(s.id, e, st),
+        patch: (p) => { if (gen === e.gen) this.apply(s.id, e, p) },
+        status: (st) => { if (gen === e.gen) this.setStatus(s.id, e, st) },
         ask: (ask, signal) => new Promise<AskAnswer>((resolve) => {
+          if (gen !== e.gen) return resolve({ type: 'permission', decision: 'deny', message: 'Session closed' })
           e.asks.set(ask.id, { resolve, toolUseId: ask.toolUseId })
           this.setTool(s.id, e, ask.toolUseId, 'awaiting_approval')
           this.apply(s.id, e, { op: 'upsert', item: { kind: 'ask', id: ask.id, ask } })
+          if (e.status.state !== 'requires_action') e.resumeState = e.status.state
           this.setStatus(s.id, e, { state: 'requires_action' })
           signal.addEventListener('abort', () => {
             if (!e.asks.delete(ask.id)) return
@@ -106,7 +118,7 @@ export class Engine {
       this.apply(id, e, { op: 'update', id: askId, partial: { answer } })
       this.setTool(id, e, pending.toolUseId, denied ? 'denied' : 'running')
       if (answer.type === 'plan' && !denied) this.setApprovalMode(id, answer.decision === 'approve-edits' ? 'accept-edits' : 'ask', false)
-      if (e.asks.size === 0) this.setStatus(id, e, { state: 'running' })
+      if (e.asks.size === 0) { const state = e.live ? e.resumeState ?? 'running' : 'closed'; e.resumeState = undefined; this.setStatus(id, e, { state }) }
       return
     }
   }
@@ -159,12 +171,10 @@ export class Engine {
   close(id: string): void {
     const e = this.entries.get(id)
     if (!e?.live) return
-    for (const [, a] of e.asks) a.resolve({ type: 'permission', decision: 'deny', message: 'Session closed' })
-    e.asks.clear()
     clearTimeout(e.idleTimer)
     e.live.close()
     e.live = null
-    this.setStatus(id, e, { state: 'closed' })
+    this.setStatus(id, e, { state: 'closed' }) // settles pending asks and tools
   }
 
   closeAll(): void { for (const id of this.entries.keys()) this.close(id) }
@@ -183,8 +193,13 @@ export class Engine {
     this.push('transcript:patch', { sessionId: id, patch: p })
   }
 
-  /** The process is gone: nothing still marked running will ever finish. */
+  /** The process is gone: nothing still marked running will ever finish, and no ask can be answered. */
   private settle(id: string, e: Entry): void {
+    for (const [askId, a] of e.asks) {
+      a.resolve({ type: 'permission', decision: 'deny', message: 'Session closed' })
+      this.apply(id, e, { op: 'update', id: askId, partial: { cancelled: true } })
+    }
+    e.asks.clear(); e.resumeState = undefined
     for (const i of e.items) {
       if (i.kind !== 'tool' || (i.status !== 'running' && i.status !== 'awaiting_approval')) continue
       this.apply(id, e, { op: 'update', id: i.id, partial: { status: 'interrupted', ...(i.task?.status === 'running' ? { task: { ...i.task, status: 'stopped', endedAt: Date.now() } } : {}) } })
@@ -197,6 +212,7 @@ export class Engine {
   }
 
   private setStatus(id: string, e: Entry, st: Partial<SessionStatus>): void {
+    if (e.asks.size && (st.state === 'running' || st.state === 'idle')) { e.resumeState = st.state; st = { ...st, state: 'requires_action' } } // an unanswered ask keeps the "needs you" signal
     e.status = { ...e.status, ...st }
     if ('rateLimit' in st && !st.rateLimit) delete e.status.rateLimit
     if (st.state === 'closed') { e.live = null; e.status.tasks = 0; this.settle(id, e) }
