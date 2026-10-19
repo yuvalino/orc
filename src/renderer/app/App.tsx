@@ -20,7 +20,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
   useEffect(() => { document.title = transport?.kind === 'remote' ? `orc — ${transport.host}` : 'orc' }, [transport?.host])
-  if (!transport || transport.phase !== 'ready') return <div className="flex h-full">{transport && <Connect t={transport} />}</div>
+  if (!transport || transport.phase !== 'ready') return <div className="flex h-full">{transport && <Connect t={transport} />}<Palette /></div> // the palette still signs in or opens another host
   return (
     <div className="flex h-full">
       <Sidebar />

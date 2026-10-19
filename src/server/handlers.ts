@@ -1,6 +1,6 @@
-import { readdirSync } from 'fs'
+import { existsSync, readdirSync } from 'fs'
 import { homedir } from 'os'
-import { dirname, join, relative } from 'path'
+import { dirname, join, relative, sep } from 'path'
 import type { OrcApi } from '@shared/api'
 import type { ApprovalMode } from '@shared/types'
 import { DEFAULT_CODEC } from './codecs/registry'
@@ -21,9 +21,12 @@ export function createHandlers(engine: Engine, push: Push): Handlers {
       },
       files: async (id, query) => { const p = projects.find(id); return p ? listFiles(p.path, query.toLowerCase()) : [] },
       browse: async (path) => { // directories only, dotfiles hidden: the remote folder picker
-        const at = path ?? homedir()
+        const win = process.platform === 'win32'
+        if (win && path === DRIVES) return { path: DRIVES, dirs: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((l) => `${l}:`).filter((d) => existsSync(`${d}\\`)), parent: null } // above a drive root: the other drives
+        let at = path ?? homedir()
+        if (win && at.startsWith(`${DRIVES}/`)) at = `${at.slice(DRIVES.length + 1)}\\`
         const dirs = readdirSync(at, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.')).map((d) => d.name).sort()
-        return { path: at, dirs, parent: dirname(at) === at ? null : dirname(at) }
+        return { path: at, dirs, parent: dirname(at) === at ? (win ? DRIVES : null) : dirname(at) }
       }
     },
     sessions: {
@@ -69,6 +72,7 @@ export function methodTable(h: object): Record<string, (...args: unknown[]) => P
 }
 
 const SKIP = new Set(['node_modules', '.git', 'dist', 'out', 'build', '.next', 'target'])
+const DRIVES = 'Drives' // the folder picker's virtual root on Windows
 
 /** Relative paths under root matching the query (substring), bounded so a huge tree stays fast. */
 function listFiles(root: string, query: string, limit = 60): string[] {
@@ -82,7 +86,7 @@ function listFiles(root: string, query: string, limit = 60): string[] {
       if (e.name.startsWith('.') && e.name !== '.claude') continue
       const full = join(dir, e.name)
       if (e.isDirectory()) { if (!SKIP.has(e.name)) walk(full, depth + 1) }
-      else { const rel = relative(root, full); if (rel.toLowerCase().includes(query)) out.push(rel) }
+      else { const rel = relative(root, full).split(sep).join('/'); if (rel.toLowerCase().includes(query)) out.push(rel) } // @mentions use forward slashes everywhere
     }
   }
   walk(root, 0)

@@ -2,7 +2,7 @@ import { execFile, execFileSync } from 'child_process'
 import { readdirSync, rmSync, statSync } from 'fs'
 import { createRequire } from 'module'
 import { hostname } from 'os'
-import { dirname, join } from 'path'
+import { dirname, join, sep } from 'path'
 import { createInterface } from 'readline'
 import { decode, encode, type ClientFrame, type Hello, type ServerFrame } from '@shared/protocol'
 import { claudeBinary, configureClaude } from './codecs/claude/codec'
@@ -42,8 +42,8 @@ process.on('SIGHUP', () => exit())
 lock.onTakeover(() => { // a take-over by another instance, or a plain kill
   const by = ready ? lock.takenOverBy() : null
   engine.closeAll(); lock.release()
-  if (by) write({ event: 'taken-over', payload: { by } })
-  process.exit(0)
+  if (by) process.stdout.write(encode({ event: 'taken-over', payload: { by } }), () => process.exit(0)) // flushed before exit, even behind a backed-up pipe
+  else process.exit(0)
 })
 setInterval(() => { if (Date.now() - last > 45_000) exit() }, 5_000).unref() // a half-open link the client never closes
 
@@ -61,8 +61,9 @@ function prune(): void {
   try {
     const entries = readdirSync(root)
     const versions = entries.filter((e) => /^\d+\.\d+\.\d+/.test(e)).sort(newer)
-    for (const v of versions.slice(2)) if (!ps.includes(`${join(root, v)}/`)) rmSync(join(root, v), { recursive: true, force: true })
-    for (const e of entries) if (e.startsWith('.tmp.') && Date.now() - statSync(join(root, e)).mtimeMs > 86_400_000) rmSync(join(root, e), { recursive: true, force: true })
+    const rm = (p: string) => { try { rmSync(p, { recursive: true, force: true }) } catch { /* in use */ } }
+    for (const v of versions.slice(2)) if (!ps.includes(join(root, v) + sep)) rm(join(root, v))
+    for (const e of entries) if (e.startsWith('.tmp.') && Date.now() - statSync(join(root, e)).mtimeMs > 86_400_000) rm(join(root, e))
   } catch { /* best effort */ }
 }
 

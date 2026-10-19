@@ -55,7 +55,7 @@ export function Palette() {
       const go = (path: string) => { setQ(''); setCursor(0); window.orc.projects.browse(path).then(setDir) }
       const rows: Row[] = [{ key: 'use', icon: <Check size={14} />, label: `Use ${dir.path}`, run: () => window.orc.projects.add(dir.path).then((p) => p && newChat(p.id)) }]
       if (dir.parent) rows.push({ key: '..', icon: <CornerLeftUp size={14} />, label: '..', detail: dir.parent, keep: true, run: () => go(dir.parent!) })
-      rows.push(...dir.dirs.filter(hit).map((d) => ({ key: d, icon: <Folder size={14} />, label: d, keep: true, run: () => go(`${dir.path.replace(/\/$/, '')}/${d}`) })))
+      rows.push(...dir.dirs.filter(hit).map((d) => ({ key: d, icon: <Folder size={14} />, label: d, keep: true, run: () => go(`${dir.path.replace(/[\\/]$/, '')}/${d}`) })))
       return [{ title: 'Folders', rows }]
     }
     const chats = [...sessions].sort((a, b) => b.lastActivityAt - a.lastActivityAt).filter((s) => hit(sessionTitle(s))).slice(0, 8)

@@ -64,7 +64,7 @@ export const useStore = create<State>((set, get) => ({
     }
     const onTransport = (t: TransportState) => { const was = get().transport?.phase; set({ transport: t }); if (t.phase === 'ready' && was !== 'ready') load() }
     api().on('transport:state', onTransport)
-    api().transport.state().then(onTransport) // a state pushed before the page loaded would otherwise be lost
+    api().transport.state().then((t) => { if (!get().transport) onTransport(t) }) // a state pushed before the page loaded would otherwise be lost; a push that beat this reply is newer
     api().on('projects:changed', (projects) => set((s) => ({ projects, draftProjectId: projects.some((p) => p.id === s.draftProjectId) ? s.draftProjectId : projects[0]?.id ?? null }))) // the drafted-into project may have been removed
     api().on('sessions:changed', (sessions) => {
       set((s) => ({ sessions, activeId: sessions.some((x) => x.id === s.activeId) ? s.activeId : null })) // the open chat may have been deleted

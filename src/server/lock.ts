@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, watchFile, writeFileSync } from 'fs'
 import { hostname, userInfo } from 'os'
 import { join } from 'path'
 
@@ -14,7 +14,7 @@ const powershell = (cmd: string) => execFileSync('powershell', ['-NoProfile', '-
 function startTime(pid: number): string | null {
   try {
     if (process.platform === 'linux') { const s = readFileSync(`/proc/${pid}/stat`, 'utf-8'); return s.slice(s.lastIndexOf(')') + 2).split(' ')[19] ?? null }
-    if (win) return powershell(`(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).StartTime.ToFileTimeUtc()`) || null
+    if (win) return powershell(`(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CreationDate.ToFileTimeUtc()`) || null // CIM, unlike Get-Process, also sees other users' processes
     return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { env: { ...process.env, LC_ALL: 'C' }, encoding: 'utf-8' }).trim() || null // locale-dependent output otherwise
   } catch { return null }
 }
@@ -34,7 +34,8 @@ export class Lock {
   /** The live holder, or null when free; a stale lock (dead or recycled pid) is removed on the way. */
   holder(): Holder | null {
     let h: Holder
-    try { h = JSON.parse(readFileSync(this.path, 'utf-8')) } catch { return null }
+    if (!existsSync(this.path)) return null
+    try { h = JSON.parse(readFileSync(this.path, 'utf-8')) } catch { rmSync(this.path, { force: true }); return null } // a crash mid-write must not lock the target for good
     if (h.host !== hostname()) return h // another machine's process (shared home): can't check, so it counts as live
     if (alive(h.pid) && startTime(h.pid) === h.startedAt) return h
     rmSync(this.path, { force: true })
@@ -74,10 +75,10 @@ export class Lock {
     return true
   }
 
-  /** Run `cb` when this process is being evicted (or, outside Windows, plainly SIGTERMed). */
+  /** Run `cb` whenever this process is being evicted (or, outside Windows, plainly SIGTERMed) — also after it took the lock back. */
   onTakeover(cb: () => void): void {
     if (!win) { process.on('SIGTERM', cb); return }
-    watchFile(this.marker, { interval: 300 }, (cur) => { if (cur.mtimeMs) { unwatchFile(this.marker); cb() } })
+    watchFile(this.marker, { interval: 300 }, (cur) => { if (cur.mtimeMs) cb() })
   }
 
   /** For an evicted holder: who took over, or null when it was an ordinary kill (no fresh marker). */

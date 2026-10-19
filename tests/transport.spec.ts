@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
-import { execSync } from 'child_process'
+import { execSync, spawn } from 'child_process'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs'
-import { tmpdir } from 'os'
+import { hostname, tmpdir, userInfo } from 'os'
 import { join } from 'path'
 import { launch, send, shot } from './helpers'
 
@@ -17,9 +17,10 @@ export function sshShim(dataDir: string, o: { fail?: string; password?: string; 
   const ask = o.password ? `pw=$("$SSH_ASKPASS" "fakehost's password:") && [ "$pw" = "${o.password}" ] || { echo "Permission denied (password)." >&2; exit 255; }\n` : ''
   // A Windows host's cmd.exe has no `sh`: it rejects the Unix bootstrap, and only the Windows-style command reaches the server.
   const win = o.windows ? `for a; do last=$a; done\ncase "$last" in cmd*) ;; *) echo "'sh' is not recognized as an internal or external command," >&2; exit 1 ;; esac\n` : ''
+  const flaky = `if [ -e "${dir}/fail-once" ]; then rm "${dir}/fail-once"; echo "ssh: Could not resolve hostname fakehost" >&2; exit 255; fi\n` // a transient failure the test can inject
   const body = o.fail
     ? `#!/bin/sh\necho "${o.fail}" >&2\nexit 255\n`
-    : `#!/bin/sh\n${ask}${win}echo "Welcome to fakehost (motd)"\nexec env ELECTRON_RUN_AS_NODE=1 ORC_FAKE_SDK="${join(__dirname, 'fixtures')}" ${o.env ?? ''} "${electron}" "${server}" --stdio --data-dir "${dataDir}"\n`
+    : `#!/bin/sh\n${flaky}${ask}${win}echo "Welcome to fakehost (motd)"\nexec env ELECTRON_RUN_AS_NODE=1 ORC_FAKE_SDK="${join(__dirname, 'fixtures')}" ${o.env ?? ''} "${electron}" "${server}" --stdio --data-dir "${dataDir}"\n`
   writeFileSync(join(dir, 'ssh'), body)
   chmodSync(join(dir, 'ssh'), 0o755)
   return dir
@@ -27,7 +28,8 @@ export function sshShim(dataDir: string, o: { fail?: string; password?: string; 
 
 test('remote target over the stdio transport: chat, disconnect and reconnect, connection errors', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'orc-remote-data-'))
-  const c = await launch({ remote: 'fakehost', dataDir, seed: true, chats: [{ id: 'history-1', title: null as unknown as string }], env: { PATH: `${sshShim(dataDir)}:${process.env.PATH}` } })
+  const shim = sshShim(dataDir)
+  const c = await launch({ remote: 'fakehost', dataDir, seed: true, chats: [{ id: 'history-1', title: null as unknown as string }], env: { PATH: `${shim}:${process.env.PATH}` } })
   const { page } = c
   await expect(page.getByText('ssh: fakehost')).toBeVisible()
   await expect(page.getByText('Recorded chat').first()).toBeVisible() // the host's saved chat
@@ -35,9 +37,12 @@ test('remote target over the stdio transport: chat, disconnect and reconnect, co
   await expect(page.getByText('Hello from Claude')).toBeVisible()
   await shot(page, 'transport-chat')
 
-  // The link drops: the server dies with it; a fresh one is started and history reloads from the host.
+  // The link drops: the server dies with it; the first attempt back fails too (no network yet), the next one succeeds
+  // and history reloads from the host.
+  writeFileSync(join(shim, 'fail-once'), '')
   execSync(`pkill -f "orc-server.js --stdio --data-dir ${dataDir}"`)
   await expect(page.getByText('Disconnected from fakehost')).toBeVisible()
+  await expect(page.getByText(/Could not resolve hostname/)).toBeVisible() // shown while it keeps trying, never a dead end
   await expect(page.locator('textarea')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('Recorded chat').first()).toBeVisible()
   await page.getByText('Chat about hello').first().click()
@@ -99,11 +104,25 @@ test('remote sign-in: ssh prompts answered in the window, the token reaches only
   await local.close()
 })
 
+test('a server left behind by a dropped link is taken over automatically', async () => {
+  // The host still runs "our" server from the previous connection (same client host and user): the new one evicts it without asking.
+  const dataDir = mkdtempSync(join(tmpdir(), 'orc-remote-data-'))
+  const old = spawn('sleep', ['60']) // stands in for the lingering server: alive, holds the lock, never answers
+  const startedAt = execSync(`ps -o lstart= -p ${old.pid}`, { env: { ...process.env, LC_ALL: 'C' } }).toString().trim()
+  const me = { host: hostname(), user: userInfo().username }
+  writeFileSync(join(dataDir, 'lock'), JSON.stringify({ pid: old.pid, startedAt, ...me, client: me, since: Date.now() - 60_000, kind: 'server' }))
+  const c = await launch({ remote: 'fakehost', dataDir, seed: true, waitFor: 'none', env: { PATH: `${sshShim(dataDir)}:${process.env.PATH}` } })
+  await expect(c.page.locator('textarea')).toBeVisible({ timeout: 15_000 }) // never the busy screen
+  await expect.poll(() => old.exitCode ?? old.signalCode).not.toBeNull()
+  expect(JSON.parse(readFileSync(join(dataDir, 'lock'), 'utf-8')).pid).not.toBe(old.pid)
+  await c.close()
+})
+
 test('a Windows host is recognised on the first connect and remembered', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'orc-remote-data-'))
   const c = await launch({ remote: 'fakehost', dataDir, seed: true, env: { PATH: `${sshShim(dataDir, { windows: true })}:${process.env.PATH}` } })
   await expect(c.page.getByText('ssh: fakehost')).toBeVisible()
-  expect(JSON.parse(readFileSync(join(c.userData, 'shell.json'), 'utf-8')).windowsHosts).toEqual(['fakehost'])
+  expect(JSON.parse(readFileSync(join(c.userData, 'hosts.json'), 'utf-8')).windowsHosts).toEqual(['fakehost'])
   await c.close()
 })
 

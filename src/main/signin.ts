@@ -1,12 +1,14 @@
-import { app, safeStorage } from 'electron'
+import { safeStorage } from 'electron'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { baseUserData } from './shell'
 
 /**
- * The long-lived Claude token for remote hosts (`claude setup-token` on this machine), kept encrypted under userData
- * and sent to a host's server in `hello` — only ever into the SDK process's environment there.
+ * The long-lived Claude token for remote hosts (`claude setup-token` on this machine), kept encrypted under the app's
+ * shared userData (every instance, local or remote, reads the same one) and sent to a host's server in `hello` — only
+ * ever into the SDK process's environment there.
  */
-const file = () => join(app.getPath('userData'), 'token')
+const file = () => join(baseUserData, 'token')
 
 export function token(): string | undefined {
   if (process.env.ORC_OAUTH_TOKEN) return process.env.ORC_OAUTH_TOKEN // tests

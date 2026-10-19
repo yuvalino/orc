@@ -41,7 +41,7 @@ jobs:
         with: { node-version: 24 }
       - run: npm ci
       - uses: actions/download-artifact@v4
-        with: { name: bundles, path: out/server }
+        with: { name: bundles, path: . } # the artifact keeps the workspace-relative paths (out/server/…, bundles.json)
       - run: mkdir -p out/server/${{ matrix.target }} && tar xzf out/server/orc-server-${{ matrix.target }}.tar.gz -C out/server/${{ matrix.target }}
         shell: bash
       - run: node scripts/check-server.mjs out/server/${{ matrix.target }}/orc-server${{ startsWith(matrix.target, 'win32') && '.exe' || '' }}

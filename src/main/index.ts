@@ -20,12 +20,13 @@ configureClaude({ version: __ORC_VERSION__, binaryPath: app.isPackaged && exists
 let secondInstances = 0
 app.on('second-instance', () => { secondInstances++; const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus() } })
 Object.assign(globalThis, { orcSecondInstances: () => secondInstances, orcNewWindow: () => createWindow() })
-const remote = remoteHost ? new Remote(remoteHost, push) : null
+const remote = remoteHost && app.hasSingleInstanceLock() ? new Remote(remoteHost, push) : null // a duplicate instance is quitting: no ssh, no askpass dir
 
-/** Windows are numbered in creation order so each remembers its own bounds. */
-let windows = 0
+/** Windows take the lowest free slot so each remembers its own bounds (the first window is slot 0 again after it was closed). */
+const slots = new Set<number>()
 function createWindow(): void {
-  const n = windows++
+  let n = 0; while (slots.has(n)) n++
+  slots.add(n)
   const saved = ((shellStore.read().windows as Electron.Rectangle[] | undefined) ?? [])[n] ?? { width: 1274, height: 797, x: undefined, y: undefined }
   const win = new BrowserWindow({
     ...saved,
@@ -40,7 +41,7 @@ function createWindow(): void {
   win.once('ready-to-show', () => win.show())
   let t: ReturnType<typeof setTimeout>
   const save = () => { clearTimeout(t); t = setTimeout(() => { if (win.isDestroyed()) return; const all = [...((shellStore.read().windows as Electron.Rectangle[] | undefined) ?? [])]; all[n] = win.getBounds(); shellStore.write({ ...shellStore.read(), windows: all }) }, 400) }
-  win.on('resize', save).on('move', save)
+  win.on('resize', save).on('move', save).on('closed', () => slots.delete(n))
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else win.loadFile(join(__dirname, '../renderer/index.html'))

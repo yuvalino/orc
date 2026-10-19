@@ -20,7 +20,7 @@ export function Composer() {
   const ref = useRef<HTMLTextAreaElement>(null)
   const running = session ? ['running', 'starting'].includes(status[session.id]?.state ?? '') : false
   const mode = session?.approvalMode ?? defaults.approvalMode
-  const projectName = (p = project) => p ? (p.name ?? p.path.split('/').pop()) : 'No project'
+  const projectName = (p = project) => p ? (p.name ?? p.path.split(/[\\/]/).pop()) : 'No project'
   const projectItems = [
     { label: 'No project', detail: 'Runs in your home folder', active: !project, onSelect: () => newChat(null) },
     ...projects.map((p) => ({ label: projectName(p)!, detail: p.path, active: p.id === project?.id, onSelect: () => newChat(p.id) })),

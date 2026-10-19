@@ -17,6 +17,7 @@ export interface TransportState {
   holder?: { client: { host: string; user: string }; since: number; kind: 'local' | 'server' } // phase busy
   by?: { host: string; user: string } // phase taken-over
   prompt?: string // phase prompt: what ssh is asking (password, passphrase, 2FA, host key)
+  notice?: boolean // phase prompt: nothing to type, ssh is waiting on something else (a security key touch)
   install?: 'downloading' | 'verifying' | 'unpacking' // phase installing: the first connect puts orc-server on the host
   error?: string
   clockOffset: number // server clock minus ours

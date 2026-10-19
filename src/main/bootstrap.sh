@@ -20,14 +20,14 @@ if [ ! -x "$dir/orc-server" ]; then
     [ -n "$glibc" ] && [ "$(printf '%s\n2.28\n' "$glibc" | sort -V | head -1)" != 2.28 ] && fail unsupported-host
   fi
   set -- $(printf '%s\n' "__BUNDLES__" | grep "^$t ") # target url sha256
-  [ -n "$2" ] || fail unsupported-host
+  [ -n "$3" ] || fail no-bundle # no digest: this build never published that target
   command -v curl >/dev/null || fail no-curl
   staging="$HOME/.orc/.tmp.$v.$$"
   trap 'rm -rf "$staging"' EXIT
   trap 'exit 1' HUP INT TERM PIPE
   mkdir -p "$staging" || fail download
   frame '{"install":{"phase":"downloading"}}'
-  curl -fsSL "$2" -o "$staging/bundle.tgz" || fail download
+  curl -fsSL --connect-timeout 15 --max-time 900 --retry 3 "$2" -o "$staging/bundle.tgz" || fail download
   frame '{"install":{"phase":"verifying"}}'
   if command -v sha256sum >/dev/null; then sum=$(sha256sum "$staging/bundle.tgz" | cut -d' ' -f1); else sum=$(shasum -a 256 "$staging/bundle.tgz" | cut -d' ' -f1); fi
   [ "$sum" = "$3" ] || fail sha256

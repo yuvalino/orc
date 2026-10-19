@@ -146,7 +146,7 @@ type Hunk = { lines: string[] }
 /** Claude Code's `tool_use_result` payloads we draw: Edit/Write patches, Grep/Glob matches, Bash file diffs. */
 type ResultData = { structuredPatch?: Hunk[]; filenames?: string[]; numFiles?: number; bashEditDiff?: { files: { filePath: string; hunks: Hunk[] }[] } }
 
-const file = (p?: string) => (p ?? '').split('/').slice(-2).join('/')
+const file = (p?: string) => (p ?? '').split(/[\\/]/).slice(-2).join('/')
 
 function toolLabel(t: Tool): { icon: typeof FileText; text: string } {
   const i = (t.input ?? {}) as Record<string, string>
