@@ -163,6 +163,9 @@ export class Engine {
 
   async stopTask(id: string, taskId: string): Promise<void> { await this.entries.get(id)?.live?.stopTask(taskId) }
 
+  /** Unread lives on the session so every window agrees and it survives an idle close; the window showing a chat clears it. */
+  markRead(id: string): void { if (sessions.find(id)?.unread) { sessions.update(id, { unread: false }); this.push('sessions:changed', sessions.list()) } }
+
   async rename(id: string, title: string): Promise<void> {
     const s = sessions.update(id, { title })!
     this.push('sessions:changed', sessions.list())
@@ -192,7 +195,8 @@ export class Engine {
     this.setStatus(id, e, { state: 'closed' }) // settles pending asks and tools
   }
 
-  closeAll(): void { for (const id of this.entries.keys()) this.close(id) }
+  closeAll(): void { this.shuttingDown = true; for (const id of this.entries.keys()) this.close(id); this.shuttingDown = false }
+  private shuttingDown = false // our own shutdown must not dot every chat that happened to be running
 
   /** Fill in titles for chats whose transcript the codec already has (e.g. created before a restart). */
   hydrateTitles(): void { for (const s of sessions.list()) if (!s.title && !s.autoTitle) void this.refreshTitle(s.id) }
@@ -229,7 +233,9 @@ export class Engine {
 
   private setStatus(id: string, e: Entry, st: Partial<SessionStatus>): void {
     if (e.asks.size && (st.state === 'running' || st.state === 'idle')) { e.resumeState = st.state; st = { ...st, state: 'requires_action' } } // an unanswered ask keeps the "needs you" signal
+    const finished = e.status.state === 'running' && (st.state === 'idle' || (st.state === 'closed' && !this.shuttingDown))
     e.status = { ...e.status, ...st }
+    if (finished) { sessions.update(id, { unread: true }); this.push('sessions:changed', sessions.list()) } // a window that shows this chat marks it read at once
     if ('rateLimit' in st && !st.rateLimit) delete e.status.rateLimit
     if (st.state === 'closed') { e.live = null; e.status.tasks = 0; this.settle(id, e) }
     clearTimeout(e.idleTimer)

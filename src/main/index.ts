@@ -19,11 +19,14 @@ const unpacked = join(process.resourcesPath ?? '', 'app.asar.unpacked/node_modul
 configureClaude({ version: __ORC_VERSION__, binaryPath: app.isPackaged && existsSync(unpacked) ? unpacked : undefined })
 let secondInstances = 0
 app.on('second-instance', () => { secondInstances++; const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus() } })
-Object.assign(globalThis, { orcSecondInstances: () => secondInstances })
+Object.assign(globalThis, { orcSecondInstances: () => secondInstances, orcNewWindow: () => createWindow() })
 const remote = remoteHost ? new Remote(remoteHost, push) : null
 
+/** Windows are numbered in creation order so each remembers its own bounds. */
+let windows = 0
 function createWindow(): void {
-  const saved = (shellStore.read().window as Electron.Rectangle | undefined) ?? { width: 1274, height: 797, x: undefined, y: undefined }
+  const n = windows++
+  const saved = ((shellStore.read().windows as Electron.Rectangle[] | undefined) ?? [])[n] ?? { width: 1274, height: 797, x: undefined, y: undefined }
   const win = new BrowserWindow({
     ...saved,
     minWidth: 900,
@@ -37,7 +40,7 @@ function createWindow(): void {
   })
   win.once('ready-to-show', () => win.show())
   let t: ReturnType<typeof setTimeout>
-  const save = () => { clearTimeout(t); t = setTimeout(() => !win.isDestroyed() && shellStore.write({ ...shellStore.read(), window: win.getBounds() }), 400) }
+  const save = () => { clearTimeout(t); t = setTimeout(() => { if (win.isDestroyed()) return; const all = [...((shellStore.read().windows as Electron.Rectangle[] | undefined) ?? [])]; all[n] = win.getBounds(); shellStore.write({ ...shellStore.read(), windows: all }) }, 400) }
   win.on('resize', save).on('move', save)
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -47,7 +50,11 @@ function createWindow(): void {
 function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { role: 'appMenu' },
-    { label: 'File', submenu: [{ label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: () => push('menu:new-chat', undefined) }, { type: 'separator' }, { role: 'close' }] },
+    { label: 'File', submenu: [
+      { label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: () => BrowserWindow.getFocusedWindow()?.webContents.send('menu:new-chat') }, // the focused window only
+      { label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: () => createWindow() },
+      { type: 'separator' }, { role: 'close' }
+    ] },
     { role: 'editMenu' },
     { role: 'viewMenu' },
     { role: 'windowMenu' },

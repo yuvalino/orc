@@ -7,7 +7,7 @@ const api: OrcApi = {
   projects: { list: call('projects.list'), add: call('projects.add'), remove: call('projects.remove'), files: call('projects.files'), browse: call('projects.browse') },
   sessions: {
     list: call('sessions.list'), create: call('sessions.create'), open: call('sessions.open'),
-    send: call('sessions.send'), interrupt: call('sessions.interrupt'), stopTask: call('sessions.stopTask'), update: call('sessions.update'),
+    send: call('sessions.send'), interrupt: call('sessions.interrupt'), stopTask: call('sessions.stopTask'), markRead: call('sessions.markRead'), update: call('sessions.update'),
     remove: call('sessions.remove'), status: call('sessions.status')
   },
   answerAsk: call('asks.answer'),

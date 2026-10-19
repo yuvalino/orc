@@ -35,6 +35,7 @@ export interface OrcApi {
     send(id: string, text: string): Promise<void>
     interrupt(id: string): Promise<void>
     stopTask(id: string, taskId: string): Promise<void>
+    markRead(id: string): Promise<void>
     update(id: string, patch: Partial<Pick<Session, 'title' | 'isPinned' | 'approvalMode' | 'model' | 'effort'>>): Promise<void>
     remove(id: string): Promise<void>
     status(id: string): Promise<SessionStatus>

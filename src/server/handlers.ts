@@ -37,6 +37,7 @@ export function createHandlers(engine: Engine, push: Push): Handlers {
       send: (id, text) => engine.send(id, text),
       interrupt: (id) => engine.interrupt(id),
       stopTask: (id, taskId) => engine.stopTask(id, taskId),
+      markRead: async (id) => engine.markRead(id),
       update: async (id, patch) => {
         if (patch.title !== undefined) await engine.rename(id, patch.title ?? '')
         if (patch.approvalMode) await engine.setApprovalMode(id, patch.approvalMode)

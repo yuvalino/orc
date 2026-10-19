@@ -13,7 +13,6 @@ interface State {
   draftProjectId: string | null
   transcripts: Record<string, Item[]>
   status: Record<string, SessionStatus>
-  unread: Record<string, true>
   models: ModelOption[]
   account: Account | null
   draft: string
@@ -41,14 +40,14 @@ interface State {
 const api = () => window.orc
 
 export const useStore = create<State>((set, get) => ({
-  projects: [], sessions: [], activeId: null, draftProjectId: null, transcripts: {}, status: {}, unread: {}, models: [], account: null, draft: '', palette: null, panel: null,
+  projects: [], sessions: [], activeId: null, draftProjectId: null, transcripts: {}, status: {}, models: [], account: null, draft: '', palette: null, panel: null,
   defaults: { approvalMode: 'ask', model: null, effort: null }, transport: null,
 
   init() {
     const loadModels = () => api().codecInfo().then((i) => { if (i.models.length) { set({ models: i.models, account: i.account }); api().settings.set('models', i.models) } })
     // Everything the engine knows is (re)fetched whenever the transport reports ready: at startup, and after a reconnect or take-over.
     const load = async () => {
-      set({ transcripts: {}, status: {}, unread: {}, models: [], account: null })
+      set({ transcripts: {}, status: {}, models: [], account: null })
       api().projects.list().then((projects) => set((s) => ({ projects, draftProjectId: s.draftProjectId ?? projects[0]?.id ?? null }))) // a fresh chat starts in a project when one exists
       Promise.all((['approvalMode', 'model', 'effort'] as const).map((k) => api().settings.get(k))).then(([approvalMode, model, effort]) =>
         set((s) => ({ defaults: { approvalMode: (approvalMode as ApprovalMode) ?? s.defaults.approvalMode, model: (model as string) ?? null, effort: (effort as string) ?? null } })))
@@ -67,15 +66,15 @@ export const useStore = create<State>((set, get) => ({
     api().on('transport:state', onTransport)
     api().transport.state().then(onTransport) // a state pushed before the page loaded would otherwise be lost
     api().on('projects:changed', (projects) => set((s) => ({ projects, draftProjectId: projects.some((p) => p.id === s.draftProjectId) ? s.draftProjectId : projects[0]?.id ?? null }))) // the drafted-into project may have been removed
-    api().on('sessions:changed', (sessions) => set((s) => ({ sessions, activeId: sessions.some((x) => x.id === s.activeId) ? s.activeId : null }))) // the open chat may have been deleted
+    api().on('sessions:changed', (sessions) => {
+      set((s) => ({ sessions, activeId: sessions.some((x) => x.id === s.activeId) ? s.activeId : null })) // the open chat may have been deleted
+      const id = get().activeId
+      if (id && sessions.find((x) => x.id === id)?.unread) api().sessions.markRead(id) // we are looking at it
+    })
     api().on('transcript:patch', ({ sessionId, patch }) =>
       set((s) => (s.transcripts[sessionId] ? { transcripts: { ...s.transcripts, [sessionId]: applyPatch(s.transcripts[sessionId], patch) } } : s))) // unloaded chats are fetched whole on select
     api().on('session:status', ({ sessionId, status }) => {
-      set((s) => {
-        const was = s.status[sessionId]?.state
-        const finished = was === 'running' && (status.state === 'idle' || status.state === 'closed') && s.activeId !== sessionId
-        return { status: { ...s.status, [sessionId]: status }, unread: finished ? { ...s.unread, [sessionId]: true } : s.unread }
-      })
+      set((s) => ({ status: { ...s.status, [sessionId]: status } }))
       if (!get().account && status.state !== 'closed' && status.state !== 'starting') loadModels()
     })
     api().on('menu:new-chat', () => get().newChat())
@@ -84,7 +83,8 @@ export const useStore = create<State>((set, get) => ({
   setDefaults(patch) { Object.entries(patch).forEach(([k, v]) => api().settings.set(k, v)); set((s) => ({ defaults: { ...s.defaults, ...patch } })) },
 
   async select(id) {
-    set((s) => { const unread = { ...s.unread }; delete unread[id]; return { activeId: id, unread, palette: null, panel: s.panel && { toolUseId: null } } })
+    set((s) => ({ activeId: id, palette: null, panel: s.panel && { toolUseId: null } }))
+    api().sessions.markRead(id)
     if (!get().transcripts[id]) {
       // Each reply is stored in its own microtask so a patch pushed in between can't be overwritten by a stale snapshot.
       const items = await api().sessions.open(id)

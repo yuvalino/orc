@@ -21,6 +21,7 @@ export interface Session {
   approvalMode: ApprovalMode
   model: string | null
   effort?: string | null
+  unread?: boolean // finished while no window was looking; cleared by sessions.markRead
 }
 
 export type RuntimeState = 'closed' | 'starting' | 'idle' | 'running' | 'requires_action'
