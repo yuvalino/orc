@@ -1,0 +1,106 @@
+name: Release
+# A v* tag publishes a release:
+#   1. server: one macOS runner builds the orc-server bundle for every target (codesigning the darwin ones; PE needs none),
+#      and the bundles.json naming them with their checksums;
+#   2. smoke: each bundle runs on its own platform;
+#   3. app: Orc is packaged for Windows, Linux and macOS, each compiled with that bundles.json (the app checks a remote host's
+#      download against it), so the app and the bundles it installs always come from the same release;
+#   4. release: one GitHub release with the installers, the bundles and bundles.json.
+# Run by hand (workflow_dispatch) it's a dry run: everything but the release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  server:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/build-server.mjs darwin-arm64 darwin-x64 linux-x64 linux-arm64 win32-x64 win32-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundles
+          path: |
+            out/server/orc-server-*.tar.gz
+            bundles.json
+
+  smoke:
+    needs: server
+    strategy:
+      matrix:
+        include:
+          - { os: macos-latest, target: darwin-arm64 }
+          - { os: macos-13, target: darwin-x64 }
+          - { os: ubuntu-latest, target: linux-x64 }
+          - { os: ubuntu-24.04-arm, target: linux-arm64 }
+          - { os: windows-latest, target: win32-x64 }
+          - { os: windows-11-arm, target: win32-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with: { name: bundles, path: . } # the artifact keeps the workspace-relative paths (out/server/…, bundles.json)
+      - run: mkdir -p out/server/${{ matrix.target }} && tar xzf out/server/orc-server-${{ matrix.target }}.tar.gz -C out/server/${{ matrix.target }}
+        shell: bash
+      - run: node scripts/check-server.mjs out/server/${{ matrix.target }}/orc-server${{ startsWith(matrix.target, 'win32') && '.exe' || '' }}
+        shell: bash
+
+  app:
+    needs: server
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, flags: --win --x64 }
+          - { os: ubuntu-latest, flags: --linux --x64 }
+          - { os: macos-latest, flags: --mac --arm64 } # Apple silicon; npm ci only fetches the SDK's Claude Code binary for the runner's arch
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false' # unsigned until signing secrets are set up (see electron-builder.yml)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with: { name: bundles, path: server-bundles } # apart from out/, so the bundles themselves don't get packaged
+      - run: cp server-bundles/bundles.json bundles.json
+        shell: bash
+      - run: npm run build
+      - run: npx electron-builder ${{ matrix.flags }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+
+  release:
+    needs: [smoke, app]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: bundles, path: bundles }
+      - uses: actions/download-artifact@v4
+        with: { pattern: app-*, path: app, merge-multiple: true }
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Orc ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            app/*
+            bundles/out/server/orc-server-*.tar.gz
+            bundles/bundles.json
