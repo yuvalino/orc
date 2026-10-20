@@ -33,7 +33,7 @@ test('settings: cog menu, tabs and search, CLAUDE.md editor, recorded shortcuts'
   // Its left pane resizes like the main sidebar.
   const navEdge = (await page.getByRole('separator').first().boundingBox())!
   await page.mouse.move(navEdge.x + 3, navEdge.y + 300); await page.mouse.down(); await page.mouse.move(navEdge.x + 63, navEdge.y + 300, { steps: 4 }); await page.mouse.up()
-  expect(Math.round((await nav.boundingBox())!.width)).toBe(350)
+  await expect.poll(async () => Math.round((await nav.boundingBox())!.width)).toBe(350)
   await shot(page, 'settings-personalization')
 
   await page.getByLabel('Search settings').fill('key')
@@ -81,6 +81,6 @@ test('settings: cog menu, tabs and search, CLAUDE.md editor, recorded shortcuts'
   await page.keyboard.press('Control+,')
   await expect(page.getByRole('heading', { name: 'Personalization' })).toBeVisible()
   await page.keyboard.press('Control+Shift+J')
-  await expect(page.getByText('Start a conversation')).toBeVisible()
+  await expect(page.getByTestId('empty-chat')).toBeVisible()
   await c.close()
 })

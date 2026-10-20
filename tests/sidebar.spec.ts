@@ -41,12 +41,13 @@ test('sidebar: arrow cursor, folding sections and projects, new-chat buttons, fo
   // Recents and each project have a new-chat button; the project's starts the chat there.
   await recents.hover()
   await recents.getByTitle('New chat').click()
-  await expect(page.getByText('Start a conversation')).toBeVisible()
+  await expect(page.getByTestId('empty-chat')).toBeVisible()
   await page.getByText('Alpha chat').first().click()
   await project.hover()
   await project.getByTitle('New chat in Fixture Project').click()
-  await expect(page.getByText('Start a conversation')).toBeVisible()
+  await expect(page.getByTestId('empty-chat')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Fixture Project' }).last()).toBeVisible() // the composer's project
+  await expect(page.getByTestId('empty-chat')).toContainText(/Building Fixture Project|Fixture Project (has been generous|has big plans|will live in prosperity|will grow larger)|We build for Fixture Project/) // a greeting for the project
 
   // A running chat's spinner shows on its own row while its parents are open, and on the folded parent otherwise.
   await page.getByText('Alpha chat').first().click()

@@ -8,15 +8,22 @@ test('side panes resize within limits, Ctrl+P searches, bypass is orange, replie
 
   await expect(page.getByRole('button', { name: /^Opus 4.6/ })).toBeVisible() // the composer row has its final buttons: they set how wide the panes may get
   // Drag the sidebar's edge: it follows the pointer, then stops at its maximum and minimum.
-  const drag = async (by: number) => { const b = (await edge.boundingBox())!, x = b.x + b.width / 2, y = b.y + 200; await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + by, y, { steps: 4 }); await page.mouse.up() }
+  const drag = async (by: number) => {
+    const b = (await edge.boundingBox())!, x = b.x + b.width / 2, y = b.y + 200
+    await expect(async () => { // a move right after startup can go unnoticed: hover again until the edge lights up, then press
+      await page.mouse.move(x - 40, y); await page.mouse.move(x, y)
+      expect(await edge.evaluate((e) => e.matches(':hover'))).toBe(true)
+    }).toPass({ timeout: 5000 })
+    await page.mouse.down(); await page.mouse.move(x + by, y, { steps: 4 }); await page.mouse.up()
+  }
   await drag(60)
-  expect(Math.round((await sidebar.boundingBox())!.width)).toBe(292 + 60)
+  await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(292 + 60)
   await drag(1000)
-  expect(Math.round((await sidebar.boundingBox())!.width)).toBe(440)
+  await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(440)
   await drag(-1000)
-  expect(Math.round((await sidebar.boundingBox())!.width)).toBe(220)
+  await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(220)
   await edge.dblclick()
-  expect(Math.round((await sidebar.boundingBox())!.width)).toBe(292)
+  await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(292)
 
   // Ctrl+B slides the sidebar shut and open again, like the right pane.
   const sliding = (from: number, to: number) => page.waitForFunction(([a, b]) => { const w = document.querySelector('[data-pane=sidebar]')?.getBoundingClientRect().width ?? -1; return w > Math.min(a, b) + 1 && w < Math.max(a, b) - 1 }, [from, to], { polling: 'raf' })

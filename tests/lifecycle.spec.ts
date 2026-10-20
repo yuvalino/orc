@@ -6,7 +6,7 @@ test('saved transcripts reload, pins, rename, and interrupt', async () => {
   const { page } = c
   await expect(page.getByText('Pinned')).toBeVisible()
   await page.getByText('Other chat').first().click()
-  await expect(page.getByText('Start a conversation')).toBeHidden()
+  await expect(page.getByTestId('empty-chat')).toBeHidden()
 
   // Rename edits the title in place.
   const row = page.locator('div.group', { hasText: 'Other chat' }).first()
@@ -63,7 +63,7 @@ test('saved transcripts reload, pins, rename, and interrupt', async () => {
   page.on('dialog', (d) => d.accept())
   const renamed = page.locator('div.group', { hasText: 'Renamed chat' }).first()
   await renamed.click({ button: 'right' }); await page.getByText('Delete').click()
-  await expect(page.getByText('Start a conversation')).toBeVisible()
+  await expect(page.getByTestId('empty-chat')).toBeVisible()
   await expect(page.getByText('Renamed chat')).toHaveCount(0)
   const proj = page.locator('div.group', { hasText: 'Fixture Project' }).first()
   await proj.click({ button: 'right' }); await page.getByText('Remove project').click()

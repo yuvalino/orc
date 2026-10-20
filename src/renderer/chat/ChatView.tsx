@@ -30,6 +30,12 @@ function groupTurns(items: Item[]): Turn[] {
   return turns
 }
 
+/** The empty screen's greeting: one of these, picked anew for each new chat (and when its project changes). */
+const GREETINGS = ["Layin' the foundation", "Let's build", 'New construction', 'Clocked in', 'Have a job for me?', "What's the story?", "Let's get to work", 'Bring on the scaffolding']
+const PROJECT_GREETINGS = [(n: string) => `Building ${n}`, (n: string) => `${n} has been generous`, (n: string) => `${n} has big plans`, (n: string) => `${n} will live in prosperity`, (n: string) => `We build for ${n}`, (n: string) => `${n} will grow larger`]
+const pickOne = <T,>(list: T[]): T => list[Math.floor(Math.random() * list.length)]
+export const greetingFor = (project: { name: string | null; path: string } | null) => project ? pickOne(PROJECT_GREETINGS)(project.name ?? project.path.split(/[\\/]/).pop() ?? '') : pickOne(GREETINGS)
+
 export function ChatView() {
   const { session, project } = useActive()
   const items = useStore((s) => (session ? s.transcripts[session.id] : undefined))
@@ -38,6 +44,9 @@ export function ChatView() {
   const stick = useRef(true)
   const [leaving, setLeaving] = useState(false) // the empty screen fading out over the first turn
   const hadSession = useRef(!!session)
+  const greeting = useRef({ project: '', text: '', stale: true }) // kept while the empty screen fades out over the first turn
+  if (!session && (greeting.current.stale || greeting.current.project !== (project?.id ?? ''))) greeting.current = { project: project?.id ?? '', text: greetingFor(project), stale: false }
+  if (session) greeting.current.stale = true
   useEffect(() => {
     if (session && !hadSession.current) { setLeaving(true); const t = setTimeout(() => setLeaving(false), 300); hadSession.current = true; return () => clearTimeout(t) }
     hadSession.current = !!session
@@ -57,9 +66,9 @@ export function ChatView() {
           </div>
         )}
         {(!session || leaving) && (
-          <div className={`flex flex-1 flex-col items-center justify-center gap-1.5 text-fg-3 ${leaving ? 'fade-out pointer-events-none absolute inset-0 bg-bg' : ''}`}>
+          <div data-testid="empty-chat" className={`flex flex-1 select-none flex-col items-center justify-center gap-2 text-fg-3 ${leaving ? 'fade-out pointer-events-none absolute inset-0 bg-bg' : ''}`}>
             <div className="logo-glow mb-3"><span className="logo-sway flex"><img src={logo} alt="" className="logo-float size-[104px]" draggable={false} /></span></div>
-            <div className="text-[14px] font-medium text-fg">Start a conversation</div>
+            <div className="text-[30px] font-semibold tracking-tight text-fg-bright">{greeting.current.text}</div>
             <div className="text-[13px]">Working in <code className="rounded bg-bg-active px-1.5 py-0.5 font-mono text-[12px]">{project ? project.path.replace(/^\/Users\/[^/]+/, '~') : '~'}</code></div>
           </div>
         )}
