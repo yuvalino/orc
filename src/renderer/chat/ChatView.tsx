@@ -37,6 +37,12 @@ export function ChatView() {
   const panel = useStore((s) => s.panel)
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
+  const [leaving, setLeaving] = useState(false) // the empty screen fading out over the first turn
+  const hadSession = useRef(!!session)
+  useEffect(() => {
+    if (session && !hadSession.current) { setLeaving(true); const t = setTimeout(() => setLeaving(false), 300); hadSession.current = true; return () => clearTimeout(t) }
+    hadSession.current = !!session
+  }, [session?.id])
 
   useEffect(() => { stick.current = true }, [session?.id]) // a freshly opened chat starts at its latest message
   useEffect(() => { if (stick.current) ref.current?.scrollTo({ top: ref.current.scrollHeight }) }, [items])
@@ -52,17 +58,20 @@ export function ChatView() {
           {session && <SubagentsButton />}
         </div>
       </div>
-      {!session ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-1.5 text-fg-3">
-          <div className="logo-glow mb-3"><span className="logo-sway flex"><img src={logo} alt="" className="logo-float size-[104px]" draggable={false} /></span></div>
-          <div className="text-[14px] font-medium text-fg">Start a conversation</div>
-          <div className="text-[13px]">Working in <code className="rounded bg-bg-active px-1.5 py-0.5 font-mono text-[12px]">{project ? project.path.replace(/^\/Users\/[^/]+/, '~') : '~'}</code></div>
-        </div>
-      ) : (
-        <div ref={ref} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-[100px] py-3">
-          <Turns items={items ?? []} running={!!status && status.state !== 'idle' && status.state !== 'closed'} />
-        </div>
-      )}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {session && (
+          <div key={session.id} ref={ref} onScroll={onScroll} className="fade-in min-h-0 flex-1 overflow-y-auto px-[100px] py-3">
+            <Turns items={items ?? []} running={!!status && status.state !== 'idle' && status.state !== 'closed'} />
+          </div>
+        )}
+        {(!session || leaving) && (
+          <div className={`flex flex-1 flex-col items-center justify-center gap-1.5 text-fg-3 ${leaving ? 'fade-out pointer-events-none absolute inset-0 bg-bg' : ''}`}>
+            <div className="logo-glow mb-3"><span className="logo-sway flex"><img src={logo} alt="" className="logo-float size-[104px]" draggable={false} /></span></div>
+            <div className="text-[14px] font-medium text-fg">Start a conversation</div>
+            <div className="text-[13px]">Working in <code className="rounded bg-bg-active px-1.5 py-0.5 font-mono text-[12px]">{project ? project.path.replace(/^\/Users\/[^/]+/, '~') : '~'}</code></div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

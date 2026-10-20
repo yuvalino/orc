@@ -43,6 +43,11 @@ input.effort::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; heig
 :root[data-platform="win32"] .titlebar-end { padding-right: 150px; }
 :root[data-platform="win32"] .sidebar-head { padding-top: 12px; }
 @keyframes blink { 50% { opacity: 0; } }
+/* Empty screen → conversation: the transcript fades in while the empty screen fades out on top of it. */
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+.fade-in { animation: fade-in 0.35s ease-out; }
+.fade-out { animation: fade-out 0.28s ease-in forwards; }
 /* The empty-chat logo: a mild blue glow behind it, drifting up and down a few pixels. */
 .logo-glow { position: relative; display: flex; }
 .logo-glow::before { content: ""; position: absolute; inset: -40%; border-radius: 50%; background: radial-gradient(circle, rgba(56, 189, 248, 0.16) 0%, rgba(56, 189, 248, 0.05) 45%, transparent 70%); pointer-events: none; }
