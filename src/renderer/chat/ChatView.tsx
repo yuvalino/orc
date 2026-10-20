@@ -3,6 +3,7 @@ import { ArrowDown, Bot, Check, ChevronRight, Copy, FileText, Folder, Globe, Han
 import type { Item } from '@shared/types'
 import { AskCard } from './asks'
 import { Markdown, StreamingMarkdown } from './Markdown'
+import { Timeline, type TimelineTurn } from './Timeline'
 import { LaunchRow, SubagentsButton, isLaunch, type Tool } from './agents'
 import { sessionTitle, useActive, useStore } from '../stores/store'
 import logo from '../assets/logo.png'
@@ -48,6 +49,7 @@ export function ChatView() {
   const shownItems = deferred.id === session?.id ? deferred.items : undefined
   const status = useStore((s) => (session ? s.status[session.id] : undefined))
   const running = !!status && status.state !== 'idle' && status.state !== 'closed'
+  const panel = useStore((s) => s.panel)
   const ref = useRef<HTMLDivElement>(null)
   const [leaving, setLeaving] = useState(false) // the empty screen fading out over the first turn
   const hadSession = useRef(!!session)
@@ -120,6 +122,14 @@ export function ChatView() {
     el.scrollTo({ top: el.scrollTop + turn.getBoundingClientRect().top - el.getBoundingClientRect().top - PIN_TOP, behavior: 'smooth' })
   }, [pinned])
 
+  // The timeline: each prompt and the start of its reply; a tick jumps to its turn.
+  const timeline = useMemo<TimelineTurn[]>(() => groupTurns(shownItems ?? []).filter((t) => t.user).map((t) => ({
+    id: t.user!.id, prompt: t.user!.text, reply: t.final.filter((i) => i.kind === 'text').map((i) => i.text).join('\n\n').slice(0, 600)
+  })), [shownItems])
+  const jump = (id: string) => {
+    const el = ref.current, turn = el?.querySelector(`[data-turn="${id}"]`)
+    if (el && turn) el.scrollTo({ top: el.scrollTop + turn.getBoundingClientRect().top - el.getBoundingClientRect().top - 24, behavior: 'smooth' })
+  }
   const emptyScreen = (
     <>
       <div className="logo-glow mb-3"><span className="logo-sway flex"><img src={logo} alt="" className="logo-float size-[104px]" draggable={false} /></span></div>
@@ -137,6 +147,7 @@ export function ChatView() {
           </div>
         )}
         {session && <div data-testid="header-shade" aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-6" style={{ background: 'linear-gradient(var(--color-bg), transparent)' }} />} {/* the header's shadow, below its line: the conversation fades out under it */}
+        {session && !panel && <Timeline turns={timeline} view={ref} onJump={jump} />} {/* not beside the Subagents pane */}
         {session && below && <MoreBelow typing={running} onClick={() => toBottom(true)} />}
         {!session && <div ref={slot} className="flex-1" />}
       </div>
