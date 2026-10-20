@@ -32,6 +32,7 @@ jobs:
   smoke:
     needs: server
     strategy:
+      fail-fast: false
       matrix:
         include:
           - { os: macos-latest, target: darwin-arm64 }

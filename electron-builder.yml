@@ -21,7 +21,7 @@ win:
   target: [nsis]
 nsis:
   oneClick: false
-  allowToChangeInstallationDir: true
+  allowToChangeInstallationDirectory: true
 linux:
   target: [AppImage]
   category: Development

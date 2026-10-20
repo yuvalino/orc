@@ -29,7 +29,8 @@ createInterface({ input: child.stdout }).on('line', (l) => {
   else if (f.event) events.push(f)
 })
 child.stderr.on('data', (d) => process.stderr.write(d))
-child.on('exit', (c) => { if (c) { console.error('server exited', c); process.exit(1) } })
+let done = false
+child.on('exit', (c, sig) => { if (!done) { console.error('server exited early: code', c, 'signal', sig); process.exit(1) } })
 
 send({ hello: { version: '0.0.0-check', client: { host: 'check', user: 'check' }, takeover: false } })
 const r = await onReady
@@ -41,6 +42,7 @@ const t0 = Date.now()
 while (!events.some((e) => e.event === 'transcript:patch' && JSON.stringify(e.payload).includes('Hello from Claude')) && Date.now() - t0 < 10000) await new Promise((r) => setTimeout(r, 50))
 const ok = events.some((e) => e.event === 'transcript:patch' && JSON.stringify(e.payload).includes('Hello from Claude'))
 console.log(ok ? 'chat streamed: OK' : 'chat streamed: FAIL', `(${events.length} events)`)
+done = true
 send({ shutdown: true })
 await new Promise((r) => child.on('close', r))
 rmSync(dataDir, { recursive: true, force: true })
