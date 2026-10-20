@@ -64,7 +64,7 @@ test('background command: active after the turn, settles by notification, relay 
   await expect(page.getByText(/^Worked for/)).toHaveCount(2)
   await expect(page.locator('.bg-bubble')).toHaveCount(1) // its relay prompt is not a user message
   await expect(page.locator('textarea')).toBeEnabled()
-  await page.getByText('Sleep 4 seconds then print finished').click()
+  await page.getByText('Sleep 4 seconds then print finished', { exact: true }).click() // the panel's row, not the transcript's launch line
   await expect(page.getByText('$ sleep 4 && echo finished')).toBeVisible()
   await shot(page, 'background-done')
   await c.close()

@@ -108,13 +108,16 @@ function WorkSection({ items, running, durationMs }: { items: Item[]; running: b
   const lastText = last ? toolLabel(last).text.trim() : ''
   const live = lastText.includes(' ') ? lastText : last?.name // input is still streaming: fall back to the tool name
   const label = running ? `Working… ${live ? '· ' + live : ''}` : durationMs ? `Worked for ${durationMs < 1000 ? '<1s' : Math.round(durationMs / 1000) + 's'}` : 'Worked'
+  const launches = items.filter((i): i is Tool => i.kind === 'tool' && isLaunch(i))
   return (
     <div className="border-t border-line pt-2">
       <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-1 pb-1 text-[13px] text-fg-2 hover:text-fg">
         {running && <Loader2 size={13} className="animate-spin" />}<span className="truncate">{label}</span>
         <ChevronRight size={13} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
       </button>
-      {open && <div className="mt-2 flex flex-col gap-1">{workRows(items)}</div>}
+      {open
+        ? <div className="mt-2 flex flex-col gap-1">{workRows(items)}</div>
+        : launches.length > 0 && <div className="mt-1 flex flex-col gap-1">{workRows(launches)}</div>} {/* launches stay in view when the rest is folded away, as in Codex */}
     </div>
   )
 }
