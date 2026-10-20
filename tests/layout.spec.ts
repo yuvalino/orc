@@ -79,7 +79,7 @@ test('side panes resize within limits, Ctrl+P searches, bypass is orange, replie
   await expect.poll(() => seen(you.getByTitle('Copy'))).toBe('1')
   await expect.poll(() => seen(you.locator('span'))).toBe('1')
   expect(await you.evaluate((e) => e.querySelector('span')!.getBoundingClientRect().right <= e.querySelector('button')!.getBoundingClientRect().left)).toBe(true)
-  expect(await page.locator('.bg-bubble').last().evaluate((e) => getComputedStyle(e).backgroundColor)).toBe('rgb(29, 79, 196)') // a shade darker than the accent
+  expect(await page.locator('.bg-bubble').last().evaluate((e) => getComputedStyle(e).backgroundColor)).toBe('rgb(26, 67, 163)') // well darker than the accent
   await shot(page, 'layout')
   await c.close()
 })
