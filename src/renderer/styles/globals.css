@@ -47,7 +47,9 @@ input.effort::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; heig
 .logo-glow { position: relative; display: flex; }
 .logo-glow::before { content: ""; position: absolute; inset: -40%; border-radius: 50%; background: radial-gradient(circle, rgba(56, 189, 248, 0.16) 0%, rgba(56, 189, 248, 0.05) 45%, transparent 70%); pointer-events: none; }
 @keyframes float { from { transform: translateY(-4px); } to { transform: translateY(4px); } }
-.logo-float { position: relative; animation: float 3.2s ease-in-out infinite alternate; filter: drop-shadow(0 6px 14px rgba(56, 189, 248, 0.18)); }
+@keyframes sway { from { transform: translateX(-3px) rotate(-2.5deg); } to { transform: translateX(3px) rotate(2.5deg); } }
+.logo-sway { position: relative; animation: sway 4.7s ease-in-out infinite alternate; } /* a different period from the bob, so the path never repeats exactly */
+.logo-float { animation: float 3.2s ease-in-out infinite alternate; filter: drop-shadow(0 6px 14px rgba(56, 189, 248, 0.18)); }
 .caret::after { content: ""; display: inline-block; width: 7px; height: 16px; margin-left: 2px; vertical-align: text-bottom; background: var(--color-accent); border-radius: 1px; animation: blink 1s step-end infinite; }
 
 .md { line-height: 1.6; } .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }

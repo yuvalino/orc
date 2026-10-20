@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Ellipsis, Folder, Loader2, Plus, Search, SquarePen } from 'lucide-react'
+import { Ellipsis, Folder, Loader2, Pin, PinOff, Plus, Search, SquarePen } from 'lucide-react'
 import type { Project, Session } from '@shared/types'
 import { Menu } from '../lib/Menu'
 import { sessionTitle, useStore } from '../stores/store'
@@ -52,6 +52,16 @@ function Indicator({ ids }: { ids: string[] }) {
   return null
 }
 
+/** A row's right edge: its status indicator, swapped for its buttons while the mouse is over the row. */
+function Trailing({ indicator, children }: { indicator: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <span className="ml-auto flex shrink-0 items-center">
+      <span className="flex items-center group-hover:hidden">{indicator}</span>
+      <span className="hidden items-center gap-0.5 group-hover:flex">{children}</span>
+    </span>
+  )
+}
+
 function ProjectRow({ p, chats }: { p: Project; chats: Session[] }) {
   const { newChat, draftProjectId, activeId } = useStore()
   const selected = !activeId && draftProjectId === p.id
@@ -60,10 +70,11 @@ function ProjectRow({ p, chats }: { p: Project; chats: Session[] }) {
       <div onClick={() => newChat(p.id)} className={`group flex cursor-pointer items-center gap-[7px] rounded-md px-2.5 py-[3px] text-[14px] font-medium text-fg ${selected ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}>
         <Folder size={16} className="shrink-0 text-fg-2" />
         <span className="truncate">{p.name ?? p.path.split(/[\\/]/).pop()}</span>
-        <Indicator ids={chats.map((c) => c.id)} />
-        <Menu align="right" className="ml-auto opacity-0 group-hover:opacity-100"
+        <Trailing indicator={<Indicator ids={chats.map((c) => c.id)} />}>
+        <Menu align="right"
           trigger={<button className="rounded p-0.5 text-fg-3 hover:text-fg"><Ellipsis size={14} /></button>}
           items={[{ label: 'New chat', onSelect: () => newChat(p.id) }, { label: 'Remove project', danger: true, onSelect: () => confirm(`Remove "${p.name ?? p.path.split(/[\\/]/).pop()}" and its ${chats.length} chat${chats.length === 1 ? '' : 's'}?`) && window.orc.projects.remove(p.id) }]} />
+        </Trailing>
       </div>
       {chats.slice(0, 5).map((s) => <ChatRow key={s.id} s={s} nested />)}
     </div>
@@ -81,14 +92,15 @@ function ChatRow({ s, nested }: { s: Session; nested?: boolean }) {
             onKeyDown={(e) => { if (e.key === 'Enter') commit(e.currentTarget.value); if (e.key === 'Escape') setRenaming(false) }}
             className="min-w-0 flex-1 rounded bg-bg px-1 text-[14px] text-fg-bright outline-none" />
         : <span className="truncate">{sessionTitle(s)}</span>}
-      <Indicator ids={[s.id]} />
-      <Menu align="right" className="ml-auto opacity-0 group-hover:opacity-100"
-        trigger={<button title="Chat menu" className="rounded p-0.5 text-fg-3 hover:text-fg"><Ellipsis size={14} /></button>}
-        items={[
-          { label: 'Rename', onSelect: () => setRenaming(true) },
-          { label: s.isPinned ? 'Unpin' : 'Pin', onSelect: () => update(s.id, { isPinned: !s.isPinned }) },
-          { label: 'Delete', danger: true, onSelect: () => confirm(`Delete "${sessionTitle(s)}"?`) && window.orc.sessions.remove(s.id) }
-        ]} />
+      <Trailing indicator={<Indicator ids={[s.id]} />}>
+        <button title={s.isPinned ? 'Unpin' : 'Pin'} onClick={(e) => { e.stopPropagation(); update(s.id, { isPinned: !s.isPinned }) }} className="rounded p-0.5 text-fg-3 hover:text-fg">{s.isPinned ? <PinOff size={14} /> : <Pin size={14} />}</button>
+        <Menu align="right"
+          trigger={<button title="Chat menu" className="rounded p-0.5 text-fg-3 hover:text-fg"><Ellipsis size={14} /></button>}
+          items={[
+            { label: 'Rename', onSelect: () => setRenaming(true) },
+            { label: 'Delete', danger: true, onSelect: () => confirm(`Delete "${sessionTitle(s)}"?`) && window.orc.sessions.remove(s.id) }
+          ]} />
+      </Trailing>
     </div>
   )
 }
