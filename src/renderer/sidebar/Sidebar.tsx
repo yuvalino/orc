@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { Folder, Loader2, Pencil, Pin, PinOff, Plus, Search, SquarePen, Trash2 } from 'lucide-react'
+import { Folder, Loader2, Pencil, Pin, PinOff, Plus, Search, Settings, SquarePen, Trash2 } from 'lucide-react'
 import type { Project, Session } from '@shared/types'
-import { useContextMenu } from '../lib/Menu'
+import { Menu, useContextMenu } from '../lib/Menu'
 import { Resizer } from '../lib/Resizer'
 import { PANE, sessionTitle, useStore } from '../stores/store'
+import { showCombo } from '../lib/shortcuts'
 import logo from '../assets/logo.png'
 
 export function Sidebar() {
-  const { projects, sessions, newChat, openPalette, transport, widths, setWidth, activeId, activeRow } = useStore()
+  const { projects, sessions, newChat, openPalette, openSettings, transport, widths, setWidth, activeId, activeRow, shortcuts } = useStore()
   const recent = [...sessions].sort((a, b) => b.lastActivityAt - a.lastActivityAt)
   const pinned = recent.filter((s) => s.isPinned)
   // A chat can be listed more than once (pinned, under its project, in recents): highlight only the row it was opened from,
@@ -15,11 +16,11 @@ export function Sidebar() {
   const rows = [pinned.some((s) => s.id === activeId) && 'pinned', ...projects.map((p) => recent.filter((s) => s.projectId === p.id).slice(0, 5).some((s) => s.id === activeId) && `project:${p.id}`), recent.slice(0, 20).some((s) => s.id === activeId) && 'recents'].filter(Boolean) as string[]
   const lit = activeRow && rows.includes(activeRow) ? activeRow : rows[0]
   return (
-    <aside style={{ width: widths.sidebar }} className="relative flex shrink-0 flex-col bg-bg-sidebar">
+    <aside className="relative flex w-full flex-col bg-bg-sidebar">
       <Resizer edge="right" width={widths.sidebar} {...PANE.sidebar} onResize={(w) => setWidth('sidebar', w)} />
       <div className="flex items-center justify-between pb-1.5 pl-4 pr-3 pt-2">
         <span className="flex items-center gap-2 text-[16px] font-semibold text-fg-bright"><img src={logo} alt="" className="size-[32px]" draggable={false} />orc{transport?.kind === 'remote' && <span className="rounded-md bg-accent/20 px-1.5 py-0.5 text-[11px] font-medium text-[#93b4ff]">ssh: {transport.host}</span>}</span>
-        <button onClick={() => openPalette('chats')} title={`Search chats (${window.orc.platform === 'darwin' ? '⌘P' : 'Ctrl+P'})`} className="no-drag flex size-8 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><Search size={18} strokeWidth={1.8} /></button>
+        <button onClick={() => openPalette('chats')} title={`Search chats${shortcuts.search[0] ? ` (${showCombo(shortcuts.search[0])})` : ''}`} className="no-drag flex size-8 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><Search size={18} strokeWidth={1.8} /></button>
       </div>
       <button onClick={() => newChat()} className="mb-1 mt-1.5 flex w-full items-center gap-2 py-[5px] pl-[18px] pr-4 text-[14px] text-fg-bright hover:bg-bg-hover"><SquarePen size={15} /> New chat</button>
 
@@ -30,6 +31,10 @@ export function Sidebar() {
           {projects.map((p) => <ProjectRow key={p.id} p={p} chats={recent.filter((s) => s.projectId === p.id)} lit={lit} />)}
         </Section>
         {recent.length > 0 && <Section label="Recents">{recent.slice(0, 20).map((s) => <ChatRow key={s.id} s={s} row="recents" lit={lit} />)}</Section>}
+      </div>
+      <div className="flex shrink-0 items-center px-3 pb-3 pt-1.5">
+        <Menu beside animate="bottom" items={[{ label: 'Settings', icon: <Settings size={14} />, hint: shortcuts.settings[0] && showCombo(shortcuts.settings[0]), onSelect: () => openSettings() }]}
+          trigger={(open) => <button title="Settings" className={`flex size-8 items-center justify-center rounded-md hover:bg-bg-hover hover:text-fg-bright ${open ? 'bg-bg-active text-fg-bright' : 'text-fg-2'}`}><Settings size={18} strokeWidth={1.8} /></button>} />
       </div>
     </aside>
   )

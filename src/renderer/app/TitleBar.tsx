@@ -1,12 +1,14 @@
-import { PanelLeft } from 'lucide-react'
+import { ArrowLeft, PanelLeft } from 'lucide-react'
 import { ChatHeader } from '../chat/ChatView'
 import { useStore } from '../stores/store'
 
 const mac = window.orc.platform === 'darwin'
 const MENUS = ['File', 'Edit', 'View', 'Window', 'Help'] // the application menu's labels (main/index.ts)
 
+/** The sidebar toggle; in settings, the way back to the chats instead. */
 function ToggleSidebar() {
-  const { sidebarOpen, toggleSidebar } = useStore()
+  const { sidebarOpen, toggleSidebar, settings, closeSettings } = useStore()
+  if (settings) return <button onClick={closeSettings} title="Back (Esc)" className="no-drag flex size-7 shrink-0 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><ArrowLeft size={16} strokeWidth={1.8} /></button>
   return (
     <button onClick={toggleSidebar} title={`${sidebarOpen ? 'Hide' : 'Show'} sidebar (${mac ? '⌘B' : 'Ctrl+B'})`}
       className="no-drag flex size-7 shrink-0 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><PanelLeft size={16} strokeWidth={1.8} /></button>
@@ -19,11 +21,11 @@ function ToggleSidebar() {
  * the right but the system's controls; the chat header sits below it in ChatView.
  */
 export function TitleBar() {
-  const { sidebarOpen, widths } = useStore()
+  const { sidebarOpen, widths, settings } = useStore()
   if (mac) return (
     <div className="drag flex h-[46px] shrink-0">
-      <div style={sidebarOpen ? { width: widths.sidebar } : undefined} className={`flex shrink-0 items-center pl-[80px] pr-2 ${sidebarOpen ? 'border-r border-edge bg-bg-sidebar' : ''}`}><ToggleSidebar /></div>
-      <div className="flex min-w-0 flex-1 items-center gap-2 border-b border-line px-4"><ChatHeader /></div>
+      <div style={sidebarOpen && !settings ? { width: widths.sidebar } : settings ? { width: widths.settings } : undefined} className={`flex shrink-0 items-center pl-[80px] pr-2 ${sidebarOpen || settings ? 'border-r border-edge bg-bg-sidebar' : ''}`}><ToggleSidebar /></div>
+      <div className="flex min-w-0 flex-1 items-center gap-2 border-b border-line px-4">{!settings && <ChatHeader />}</div>
     </div>
   )
   return (

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { SlidePane } from '../lib/SlidePane'
 import { Check, ChevronLeft, ListTodo, Loader2, X } from 'lucide-react'
 import type { Item } from '@shared/types'
 import { Resizer } from '../lib/Resizer'
@@ -17,35 +18,23 @@ const elapsed = (from: number | undefined, now: number) => { if (!from) return '
 const ago = (at: number | undefined, now: number) => { if (!at) return ''; const m = Math.floor((now - at) / 60_000); return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.floor(m / 60)}h ago` }
 const modelName = (id?: string) => { const m = /^claude-([a-z]+)-(\d+)-(\d+)/.exec(id ?? ''); return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}` : id ?? '' }
 
-/**
- * The right pane. Opening and closing animate its width: its edge with the conversation sweeps out (or back), and its
- * content keeps its own width throughout so nothing reflows inside it.
- */
+/** The right pane, sliding open and shut; while it closes it keeps showing what it showed. */
 export function SubagentsPanel() {
   const { session } = useActive()
   const { panel, setWidth, widths } = useStore()
-  const want = !!panel && !!session
-  const [mounted, setMounted] = useState(want), [shown, setShown] = useState(want), [animating, setAnimating] = useState(false)
-  const last = useRef({ panel, session }) // what it showed, kept on screen while it fades out
-  if (want) last.current = { panel, session }
-  useEffect(() => {
-    if (want === shown) return
-    setAnimating(true)
-    if (!want) { setShown(false); return }
-    setMounted(true)
-    const f = requestAnimationFrame(() => requestAnimationFrame(() => setShown(true))) // mount closed, then open, so the transition runs
-    return () => cancelAnimationFrame(f)
-  }, [want])
-  if (!mounted || !last.current.panel || !last.current.session) return null
+  const open = !!panel && !!session
+  const last = useRef({ panel, session })
+  if (open) last.current = { panel, session }
+  const { panel: p, session: s } = last.current
   return (
-    <div data-pane="subagents" style={{ width: shown ? widths.panel : 0, clipPath: 'inset(0 0 0 -8px)' }} // the clip leaves room for the resize edge
-      onTransitionEnd={(e) => { if (e.target !== e.currentTarget || e.propertyName !== 'width') return; setAnimating(false); if (!shown) setMounted(false) }}
-      className={`relative shrink-0 ${animating ? 'transition-[width] duration-200 ease-out' : ''}`}>
-      <aside style={{ width: widths.panel }} className="absolute inset-y-0 right-0 flex flex-col bg-bg">
-        {shown && !animating && <Resizer edge="left" width={widths.panel} {...PANE.panel} onResize={(w) => setWidth('panel', w)} />}
-        <Body panel={last.current.panel} sessionId={last.current.session.id} />
-      </aside>
-    </div>
+    <SlidePane open={open} width={widths.panel} side="right" pane="subagents">
+      {p && s && (
+        <aside className="relative flex w-full flex-col bg-bg">
+          <Resizer edge="left" width={widths.panel} {...PANE.panel} onResize={(w) => setWidth('panel', w)} />
+          <Body panel={p} sessionId={s.id} />
+        </aside>
+      )}
+    </SlidePane>
   )
 }
 

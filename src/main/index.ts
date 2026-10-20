@@ -50,14 +50,21 @@ function createWindow(): void {
   else win.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
-/** Off macOS the window has no native menu bar: the title bar draws these labels and pops their submenus (see TitleBar.tsx). */
+/**
+ * Off macOS the window has no native menu bar: the title bar draws these labels and pops their submenus (see TitleBar.tsx).
+ * The user picks the app's shortcuts (Settings → Keyboard shortcuts); the window handles those keys, so these items only show them.
+ */
+let shortcuts: Record<string, string | undefined> = { newChat: 'Mod+N', newWindow: 'Mod+Shift+N', settings: 'Mod+,' }
+const shown = (k: string) => (shortcuts[k] ? { accelerator: shortcuts[k]!.replace('Mod', 'CmdOrCtrl'), registerAccelerator: false } : {})
+const toFocused = (channel: 'menu:new-chat' | 'menu:settings') => () => BrowserWindow.getFocusedWindow()?.webContents.send(channel) // the focused window only
 function buildMenu(): void {
   const mac = process.platform === 'darwin'
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(mac ? [{ role: 'appMenu' as const }] : []),
     { label: 'File', submenu: [
-      { label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: () => BrowserWindow.getFocusedWindow()?.webContents.send('menu:new-chat') }, // the focused window only
-      { label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: () => createWindow() },
+      { label: 'New Chat', ...shown('newChat'), click: toFocused('menu:new-chat') },
+      { label: 'New Window', ...shown('newWindow'), click: () => createWindow() },
+      { type: 'separator' }, { label: 'Settings…', ...shown('settings'), click: toFocused('menu:settings') },
       { type: 'separator' }, { role: 'close' }, ...(mac ? [] : [{ role: 'quit' as const }])
     ] },
     { label: 'Edit', role: 'editMenu' },
@@ -65,11 +72,13 @@ function buildMenu(): void {
     { label: 'Window', role: 'windowMenu' },
     { label: 'Help', role: 'help', submenu: [{ label: 'Claude Code docs', click: () => shell.openExternal('https://code.claude.com/docs') }] }
   ]))
-  ipcMain.handle('menu.popup', (e, label: string, x: number, y: number) => {
-    const window = BrowserWindow.fromWebContents(e.sender)
-    Menu.getApplicationMenu()?.items.find((i) => i.label === label)?.submenu?.popup({ window: window ?? undefined, x, y })
-  })
 }
+ipcMain.handle('menu.popup', (e, label: string, x: number, y: number) => {
+  const window = BrowserWindow.fromWebContents(e.sender)
+  Menu.getApplicationMenu()?.items.find((i) => i.label === label)?.submenu?.popup({ window: window ?? undefined, x, y })
+})
+ipcMain.handle('menu.shortcuts', (_e, map: typeof shortcuts) => { shortcuts = map; buildMenu() })
+ipcMain.handle('window.open', () => createWindow())
 
 app.whenReady().then(() => {
   if (process.platform === 'darwin' && !app.isPackaged && existsSync(icon)) app.dock?.setIcon(icon)

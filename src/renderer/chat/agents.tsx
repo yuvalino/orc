@@ -52,6 +52,6 @@ export function SubagentsButton() {
   const summary = tools.length
     ? <>{(active.length ? active : tools).slice(0, 3).map((t) => <Logo key={t.id} tool={t} size={16} />)}<span>{active.length ? `${active.length} working` : `${done} done`}</span>{active.length > 0 && done > 0 && <span className="ml-auto text-fg-2">{done} done</span>}</>
     : <span className="text-fg-2">No subagents yet</span>
-  return <Menu animate align="right" header="Subagents" items={[{ label: summary, onSelect: () => setPanel({ toolUseId: null }) }]}
+  return <Menu animate="right" align="right" header="Subagents" items={[{ label: summary, onSelect: () => setPanel({ toolUseId: null }) }]}
     trigger={(open) => <button title="Subagents" className={`flex size-7 items-center justify-center rounded-md hover:bg-bg-hover ${open ? 'bg-bg-active text-fg-bright' : 'text-fg-2'}`}><ListTodo size={16} /></button>} />
 }

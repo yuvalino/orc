@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Account, ApprovalMode, AskAnswer, Item, ModelOption, Project, Session, SessionStatus } from '@shared/types'
 import type { TransportState } from '@shared/api'
 import { applyPatch } from '@shared/types'
+import { defaultShortcuts, type ShortcutAction, type Shortcuts } from '../lib/shortcuts'
 
 /** What a new chat starts with; the composer edits these when no chat is open. */
 export interface Defaults { approvalMode: ApprovalMode; model: string | null; effort: string | null }
@@ -20,7 +21,9 @@ interface State {
   palette: null | 'chats' | 'files' | 'hosts' | 'folders' | 'signin'
   panel: null | { toolUseId: string | null } // Subagents panel: closed, the lists, or one agent's thread
   sidebarOpen: boolean
-  widths: { sidebar: number; panel: number } // remembered per browser profile (localStorage)
+  widths: { sidebar: number; panel: number; settings: number } // remembered per browser profile (localStorage)
+  settings: null | { tab: SettingsTab; editing?: 'instructions' } // the settings screen covers the window below the title bar
+  shortcuts: Shortcuts // remembered per browser profile (localStorage)
   defaults: Defaults
   transport: TransportState | null // null until the first state arrives
 
@@ -33,7 +36,11 @@ interface State {
   stopTask(taskId: string): Promise<void>
   setPanel(panel: State['panel']): void
   toggleSidebar(): void
-  setWidth(pane: 'sidebar' | 'panel', w: number): void
+  setWidth(pane: keyof State['widths'], w: number): void
+  openSettings(tab?: SettingsTab): void
+  closeSettings(): void
+  setSettings(s: NonNullable<State['settings']>): void
+  setShortcut(action: ShortcutAction, index: number, combo: string): void // a combo moves here from any action that had it
   fitPanes(): void // shrink the side panes until the conversation fits its composer (window resized, a label grew, a pane opened)
   answer(askId: string, answer: AskAnswer): Promise<void>
   update(id: string, patch: Parameters<Window['orc']['sessions']['update']>[1]): Promise<void>
@@ -45,8 +52,18 @@ interface State {
 
 const api = () => window.orc
 
+export type SettingsTab = 'general' | 'personalization' | 'shortcuts'
+
+function loadShortcuts(): Shortcuts {
+  const d = defaultShortcuts()
+  try { const saved = JSON.parse(localStorage.getItem('orc.shortcuts') ?? '{}'); for (const k of Object.keys(d) as ShortcutAction[]) if (Array.isArray(saved[k])) d[k] = saved[k] } catch { /* defaults */ }
+  return d
+}
+/** The application menu shows each action's first combo beside its item. */
+const menuShortcuts = (s: Shortcuts) => window.orc.menu.shortcuts({ newChat: s.newChat[0], newWindow: s.newWindow[0], settings: s.settings[0] }).catch(() => {})
+
 /** Side panes resize between these; the conversation takes the rest. */
-export const PANE = { sidebar: { min: 220, max: 440, initial: 292 }, panel: { min: 280, max: 560, initial: 330 } } as const
+export const PANE = { sidebar: { min: 220, max: 440, initial: 292 }, panel: { min: 280, max: 560, initial: 330 }, settings: { min: 220, max: 440, initial: 290 } } as const
 /** The composer's side padding: a share of the conversation's width, between these bounds. */
 export const COMPOSER_PAD = { min: 16, share: 0.08, max: 100 }
 /** The narrowest the conversation may get: the composer's bottom row (mode, model, send) shown in full, plus that padding. */
@@ -61,13 +78,14 @@ function minMain(): number {
 const saveWidths = (w: State['widths']) => { try { localStorage.setItem('orc.widths', JSON.stringify(w)) } catch { /* not persisted */ } }
 
 function loadWidths(): State['widths'] {
-  const clamp = (v: unknown, p: (typeof PANE)['sidebar' | 'panel']) => (typeof v === 'number' ? Math.min(p.max, Math.max(p.min, v)) : p.initial)
-  try { const w = JSON.parse(localStorage.getItem('orc.widths') ?? '{}'); return { sidebar: clamp(w.sidebar, PANE.sidebar), panel: clamp(w.panel, PANE.panel) } }
-  catch { return { sidebar: PANE.sidebar.initial, panel: PANE.panel.initial } }
+  const clamp = (v: unknown, p: (typeof PANE)[keyof typeof PANE]) => (typeof v === 'number' ? Math.min(p.max, Math.max(p.min, v)) : p.initial)
+  let w: Record<string, unknown> = {}
+  try { w = JSON.parse(localStorage.getItem('orc.widths') ?? '{}') } catch { /* defaults */ }
+  return { sidebar: clamp(w.sidebar, PANE.sidebar), panel: clamp(w.panel, PANE.panel), settings: clamp(w.settings, PANE.settings) }
 }
 
 export const useStore = create<State>((set, get) => ({
-  projects: [], sessions: [], activeId: null, activeRow: null, draftProjectId: null, transcripts: {}, status: {}, models: [], account: null, draft: '', palette: null, panel: null, sidebarOpen: true, widths: loadWidths(),
+  projects: [], sessions: [], activeId: null, activeRow: null, draftProjectId: null, transcripts: {}, status: {}, models: [], account: null, draft: '', palette: null, panel: null, sidebarOpen: true, widths: loadWidths(), settings: null, shortcuts: loadShortcuts(),
   defaults: { approvalMode: 'ask', model: null, effort: null }, transport: null,
 
   init() {
@@ -104,12 +122,14 @@ export const useStore = create<State>((set, get) => ({
       set((s) => ({ status: { ...s.status, [sessionId]: status } }))
     })
     api().on('menu:new-chat', () => get().newChat())
+    api().on('menu:settings', () => get().openSettings())
+    menuShortcuts(get().shortcuts)
   },
 
   setDefaults(patch) { Object.entries(patch).forEach(([k, v]) => api().settings.set(k, v)); set((s) => ({ defaults: { ...s.defaults, ...patch } })) },
 
   async select(id, row) {
-    set((s) => ({ activeId: id, activeRow: row ?? null, palette: null, panel: s.panel && { toolUseId: null } }))
+    set((s) => ({ settings: null, activeId: id, activeRow: row ?? null, palette: null, panel: s.panel && { toolUseId: null } }))
     api().sessions.markRead(id)
     if (!get().transcripts[id]) {
       // Each reply is stored in its own microtask so a patch pushed in between can't be overwritten by a stale snapshot.
@@ -121,7 +141,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   // undefined keeps the current project choice; null means "no project" (home folder).
-  newChat(projectId) { set((s) => ({ activeId: null, palette: null, panel: s.panel && { toolUseId: null }, draftProjectId: projectId === undefined ? s.draftProjectId : projectId })) },
+  newChat(projectId) { set((s) => ({ settings: null, activeId: null, palette: null, panel: s.panel && { toolUseId: null }, draftProjectId: projectId === undefined ? s.draftProjectId : projectId })) },
 
   async send(text) {
     let id = get().activeId
@@ -138,10 +158,21 @@ export const useStore = create<State>((set, get) => ({
   setPanel: (panel) => { set({ panel }); get().fitPanes() },
   toggleSidebar: () => { set((s) => ({ sidebarOpen: !s.sidebarOpen })); get().fitPanes() },
   setWidth(pane, w) {
-    const s = get(), other = pane === 'sidebar' ? (s.panel && s.activeId ? s.widths.panel : 0) : (s.sidebarOpen ? s.widths.sidebar : 0)
-    w = Math.max(PANE[pane].min, Math.min(w, innerWidth - other - minMain())) // never so wide the composer's bottom row would overflow
+    const s = get(), other = pane === 'sidebar' ? (s.panel && s.activeId ? s.widths.panel : 0) : pane === 'panel' ? (s.sidebarOpen ? s.widths.sidebar : 0) : 0
+    w = Math.max(PANE[pane].min, Math.min(w, innerWidth - other - minMain())) // never so wide the composer's bottom row would overflow (settings: leaves its page the same room)
     if (w === s.widths[pane]) return
     const widths = { ...s.widths, [pane]: w }; set({ widths }); saveWidths(widths)
+  },
+  openSettings: (tab = 'personalization') => set({ settings: { tab }, palette: null }),
+  closeSettings: () => set({ settings: null }),
+  setSettings: (settings) => set({ settings }),
+  setShortcut(action, index, combo) {
+    const cur = get().shortcuts
+    const shortcuts = Object.fromEntries(Object.entries(cur).map(([k, v]) => [k, v.filter((c) => c !== combo)])) as Shortcuts // no other action keeps it
+    const list = [...cur[action]]; list[Math.min(index, list.length)] = combo
+    shortcuts[action] = [...new Set(list)] // replaces the edited one; a copy elsewhere in this list goes
+    set({ shortcuts }); menuShortcuts(shortcuts)
+    try { localStorage.setItem('orc.shortcuts', JSON.stringify(shortcuts)) } catch { /* not persisted */ }
   },
   fitPanes() {
     const s = get(), panel = !!(s.panel && s.activeId)
@@ -150,7 +181,7 @@ export const useStore = create<State>((set, get) => ({
     if (panel) { const d = Math.min(over, p - PANE.panel.min); p -= d; over -= d } // the right pane gives way first
     if (s.sidebarOpen && over > 0) sidebar -= Math.min(over, sidebar - PANE.sidebar.min)
     if (sidebar === s.widths.sidebar && p === s.widths.panel) return
-    const widths = { sidebar, panel: p }; set({ widths }); saveWidths(widths)
+    const widths = { ...s.widths, sidebar, panel: p }; set({ widths }); saveWidths(widths)
   },
   async answer(askId, answer) { await api().answerAsk(askId, answer) },
   async update(id, patch) { await api().sessions.update(id, patch) },

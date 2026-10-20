@@ -6,6 +6,7 @@ export interface PushEvents {
   'sessions:changed': Session[]
   'projects:changed': Project[]
   'menu:new-chat': undefined
+  'menu:settings': undefined
   'transport:state': TransportState
 }
 
@@ -25,7 +26,7 @@ export interface TransportState {
 
 export interface OrcApi {
   platform: string // window chrome differs per OS
-  menu: { popup(label: string, x: number, y: number): Promise<void> } // the application menu's submenus, for the in-window menu bar off macOS
+  menu: { popup(label: string, x: number, y: number): Promise<void>; shortcuts(map: Record<string, string | undefined>): Promise<void> } // popup: the application menu's submenus, for the in-window menu bar off macOS; shortcuts: the labels its items show (the window handles the keys)
   projects: {
     list(): Promise<Project[]>
     add(path?: string): Promise<Project | null> // no path: the desktop shows its folder dialog (local targets only)
@@ -48,6 +49,8 @@ export interface OrcApi {
   answerAsk(askId: string, answer: AskAnswer): Promise<void>
   codecInfo(): Promise<{ models: ModelOption[]; account: Account | null }>
   settings: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }
+  instructions: { get(): Promise<{ path: string; text: string | null }>; set(text: string): Promise<void> } // the user's CLAUDE.md on the engine's machine; text null: no file yet
+  window: { open(): Promise<void> } // another window on this instance
   transport: {
     state(): Promise<TransportState>
     takeover(): Promise<void>

@@ -48,9 +48,11 @@ input.effort::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; heig
 @keyframes fade-out { to { opacity: 0; } }
 .fade-in { animation: fade-in 0.35s ease-out; }
 .fade-out { animation: fade-out 0.28s ease-in forwards; }
-/* Dropdowns that ask for it (Menu `animate`): fade and slide in from the right, and back out. */
-@keyframes menu-in { from { opacity: 0; transform: translateX(12px); } }
-@keyframes menu-out { to { opacity: 0; transform: translateX(12px); } }
+/* Dropdowns that ask for it (Menu `animate`): fade and slide in from the right or the bottom, and back out. */
+.from-right { --menu-dx: 12px; --menu-dy: 0px; }
+.from-bottom { --menu-dx: 0px; --menu-dy: 8px; }
+@keyframes menu-in { from { opacity: 0; transform: translate(var(--menu-dx), var(--menu-dy)); } }
+@keyframes menu-out { to { opacity: 0; transform: translate(var(--menu-dx), var(--menu-dy)); } }
 .menu-in { animation: menu-in 0.16s ease-out; }
 .menu-out { animation: menu-out 0.14s ease-in forwards; }
 /* The empty-chat logo: a mild blue glow behind it, drifting up and down a few pixels. */

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
-export interface MenuItem { label: ReactNode; icon?: ReactNode; detail?: string; onSelect?: () => void; active?: boolean; danger?: boolean; tone?: string } // tone: a text color class for the label, e.g. 'text-bypass'; the detail stays gray
+export interface MenuItem { label: ReactNode; icon?: ReactNode; detail?: string; hint?: string; onSelect?: () => void; active?: boolean; danger?: boolean; tone?: string } // hint: shown at the right (a shortcut); detail: a line below; tone: a text color class for the label, e.g. 'text-bypass' (the detail stays gray)
 
 const panel = 'z-50 min-w-52 rounded-lg border border-line-strong bg-bg-composer p-1 shadow-xl'
 
@@ -14,7 +14,7 @@ function Items({ items, header, close }: { items: MenuEntry[]; header?: string; 
       {items.map((it, i) => it === 'separator' ? <div key={i} role="separator" className="mx-1 my-1 h-px bg-line-strong" /> : (
         <button key={i} onClick={(e) => { e.stopPropagation(); close(); it.onSelect?.() }}
           className={`flex w-full flex-col rounded-md px-2.5 py-1.5 text-[13px] hover:bg-bg-hover ${it.tone ?? (it.danger ? 'text-bad' : it.active ? 'text-fg-bright' : 'text-fg-sub')}`}>
-          <span className="flex w-full items-center gap-2">{it.icon && <span className="flex size-4 shrink-0 items-center justify-center">{it.icon}</span>}{it.label}{it.active && <span className="ml-auto text-accent">✓</span>}</span>
+          <span className="flex w-full items-center gap-2">{it.icon && <span className="flex size-4 shrink-0 items-center justify-center">{it.icon}</span>}{it.label}{it.hint && <span className="ml-auto pl-4 text-[12px] text-fg-2">{it.hint}</span>}{it.active && <span className="ml-auto text-accent">✓</span>}</span>
           {it.detail && <span className={`text-[11px] ${it.danger && !it.tone ? 'text-bad/70' : 'text-fg-2'}`}>{it.detail}</span>}
         </button>
       ))}
@@ -22,8 +22,11 @@ function Items({ items, header, close }: { items: MenuEntry[]; header?: string; 
   )
 }
 
-/** Minimal popover menu anchored to its trigger; a function trigger is told whether the menu is open. `animate`: fades and slides in from the right, and back out. */
-export function Menu({ trigger, items, header, align = 'left', up, className = '', animate }: { trigger: ReactNode | ((open: boolean) => ReactNode); items: MenuEntry[]; header?: string; align?: 'left' | 'right'; up?: boolean; className?: string; animate?: boolean }) {
+/**
+ * Minimal popover menu anchored to its trigger; a function trigger is told whether the menu is open. It opens below the trigger,
+ * above it (`up`), or beside it to the right with their bottoms aligned (`beside`). `animate`: fades and slides in from that side, and back out.
+ */
+export function Menu({ trigger, items, header, align = 'left', up, beside, className = '', animate }: { trigger: ReactNode | ((open: boolean) => ReactNode); items: MenuEntry[]; header?: string; align?: 'left' | 'right'; up?: boolean; beside?: boolean; className?: string; animate?: 'right' | 'bottom' }) {
   const [open, setOpenState] = useState(false), [closing, setClosing] = useState(false)
   const setOpen = (next: boolean | ((o: boolean) => boolean)) => {
     const v = typeof next === 'function' ? next(open) : next
@@ -41,7 +44,7 @@ export function Menu({ trigger, items, header, align = 'left', up, className = '
     <div ref={ref} className={`relative ${className}`}>
       <div onClick={(e) => { e.stopPropagation(); setOpen((o) => !o) }}>{typeof trigger === 'function' ? trigger(open) : trigger}</div>
       {(open || closing) && (
-        <div onAnimationEnd={() => !open && setClosing(false)} className={`absolute ${panel} ${align === 'right' ? 'right-0' : 'left-0'} ${up ? 'bottom-full mb-1' : 'top-full mt-1'} ${animate ? (open ? 'menu-in' : 'menu-out pointer-events-none') : ''}`}>
+        <div onAnimationEnd={() => !open && setClosing(false)} className={`absolute ${panel} ${beside ? 'bottom-0 left-full ml-2' : `${align === 'right' ? 'right-0' : 'left-0'} ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`} ${animate ? `from-${animate} ${open ? 'menu-in' : 'menu-out pointer-events-none'}` : ''}`}>
           <Items items={items} header={header} close={() => setOpen(false)} />
         </div>
       )}

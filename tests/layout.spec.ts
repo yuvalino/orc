@@ -17,6 +17,13 @@ test('side panes resize within limits, Ctrl+P searches, bypass is orange, replie
   await edge.dblclick()
   expect(Math.round((await sidebar.boundingBox())!.width)).toBe(292)
 
+  // Ctrl+B slides the sidebar shut and open again, like the right pane.
+  const sliding = (from: number, to: number) => page.waitForFunction(([a, b]) => { const w = document.querySelector('[data-pane=sidebar]')?.getBoundingClientRect().width ?? -1; return w > Math.min(a, b) + 1 && w < Math.max(a, b) - 1 }, [from, to], { polling: 'raf' })
+  let s = sliding(292, 0); await page.keyboard.press('Control+b'); await s
+  await expect(page.locator('[data-pane=sidebar]')).toHaveCount(0)
+  s = sliding(0, 292); await page.keyboard.press('Control+b'); await s
+  await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(292)
+
   await page.keyboard.press('Control+p')
   await expect(page.getByPlaceholder('Search chats')).toBeVisible()
   await page.getByPlaceholder('Search chats').press('Escape')

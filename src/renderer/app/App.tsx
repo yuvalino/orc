@@ -7,16 +7,26 @@ import { Palette } from '../lib/Palette'
 import { SubagentsPanel } from '../chat/Subagents'
 import { Connect } from './Connect'
 import { TitleBar } from './TitleBar'
+import { SlidePane } from '../lib/SlidePane'
+import { Settings } from '../settings/Settings'
+import { comboOf, type ShortcutAction } from '../lib/shortcuts'
 
 export default function App() {
-  const { init, openPalette, newChat, toggleSidebar, sidebarOpen, transport } = useStore()
+  const { init, sidebarOpen, widths, transport, settings } = useStore()
   useEffect(() => {
     init()
+    const run: Record<ShortcutAction, () => void> = {
+      newChat: () => useStore.getState().newChat(),
+      newWindow: () => window.orc.window.open(),
+      search: () => useStore.getState().openPalette('chats'),
+      toggleSidebar: () => useStore.getState().toggleSidebar(),
+      settings: () => useStore.getState().openSettings()
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return
-      if (e.key === 'k' || e.key === 'p') { e.preventDefault(); openPalette('chats') }
-      if (e.key === 'n') { e.preventDefault(); newChat() }
-      if (e.key === 'b') { e.preventDefault(); toggleSidebar() }
+      const s = useStore.getState()
+      if (e.key === 'Escape' && s.settings && !s.settings.editing && !s.palette) { s.closeSettings(); return } // the editor has its own Back
+      const combo = comboOf(e), action = combo && (Object.keys(s.shortcuts) as ShortcutAction[]).find((a) => s.shortcuts[a].includes(combo))
+      if (action) { e.preventDefault(); run[action]() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -26,14 +36,16 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       <TitleBar />
-      <div className="flex min-h-0 flex-1">
-        {sidebarOpen && <Sidebar />}
-        <main className="flex min-w-0 flex-1 flex-col bg-bg">
-          <ChatView />
-          <Composer />
-        </main>
-        <SubagentsPanel />
-      </div>
+      {settings ? <Settings /> : (
+        <div className="flex min-h-0 flex-1">
+          <SlidePane open={sidebarOpen} width={widths.sidebar} side="left" pane="sidebar"><Sidebar /></SlidePane>
+          <main className="flex min-w-0 flex-1 flex-col bg-bg">
+            <ChatView />
+            <Composer />
+          </main>
+          <SubagentsPanel />
+        </div>
+      )}
       <Palette />
     </div>
   )

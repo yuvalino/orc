@@ -17,7 +17,7 @@ export const engine = new Engine(push)
 const base = createHandlers(engine, push)
 
 /** The desktop binds the engine's handlers to IPC and adds what only a desktop can do: the native folder dialog and the transport itself. */
-const local: Omit<OrcApi, 'on' | 'platform' | 'menu'> = {
+const local: Omit<OrcApi, 'on' | 'platform' | 'menu' | 'window'> = {
   ...base,
   projects: {
     ...base.projects,

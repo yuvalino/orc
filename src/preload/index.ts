@@ -5,7 +5,8 @@ const call = (ch: string) => (...args: unknown[]) => ipcRenderer.invoke(ch, ...a
 
 const api: OrcApi = {
   platform: process.platform,
-  menu: { popup: call('menu.popup') },
+  menu: { popup: call('menu.popup'), shortcuts: call('menu.shortcuts') },
+  window: { open: call('window.open') },
   projects: { list: call('projects.list'), add: call('projects.add'), remove: call('projects.remove'), files: call('projects.files'), browse: call('projects.browse') },
   sessions: {
     list: call('sessions.list'), create: call('sessions.create'), open: call('sessions.open'),
@@ -15,6 +16,7 @@ const api: OrcApi = {
   answerAsk: call('asks.answer'),
   codecInfo: call('codec.info'),
   settings: { get: call('settings.get'), set: call('settings.set') },
+  instructions: { get: call('instructions.get'), set: call('instructions.set') },
   transport: { state: call('transport.state'), takeover: call('transport.takeover'), reconnect: call('transport.reconnect'), hosts: call('transport.hosts'), open: call('transport.open'), answer: call('transport.answer'), signIn: call('transport.signIn'), signedIn: call('transport.signedIn') },
   on: (channel, cb) => {
     const h = (_: unknown, payload: unknown) => cb(payload as never)

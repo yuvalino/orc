@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { dirname, join, relative, sep } from 'path'
 import type { OrcApi } from '@shared/api'
@@ -8,7 +8,7 @@ import type { Engine, Push } from './engine'
 import { projects, sessions, settings } from './store'
 
 /** The engine's half of OrcApi: everything but transport (desktop-side) and the push channel. A path is required for add — the native folder dialog lives in the desktop shell. */
-export type Handlers = Omit<OrcApi, 'on' | 'platform' | 'menu' | 'transport' | 'projects'> & { projects: Omit<OrcApi['projects'], 'add'> & { add(path: string): Promise<OrcApi['projects'] extends { add(...a: never[]): Promise<infer R> } ? R : never> } }
+export type Handlers = Omit<OrcApi, 'on' | 'platform' | 'menu' | 'window' | 'transport' | 'projects'> & { projects: Omit<OrcApi['projects'], 'add'> & { add(path: string): Promise<OrcApi['projects'] extends { add(...a: never[]): Promise<infer R> } ? R : never> } }
 
 export function createHandlers(engine: Engine, push: Push): Handlers {
   return {
@@ -53,7 +53,11 @@ export function createHandlers(engine: Engine, push: Push): Handlers {
     },
     answerAsk: async (askId, answer) => engine.answerAsk(askId, answer),
     codecInfo: () => engine.info(),
-    settings: { get: async (k) => settings.get(k), set: async (k, v) => settings.set(k, v) }
+    settings: { get: async (k) => settings.get(k), set: async (k, v) => settings.set(k, v) },
+    instructions: {
+      get: async () => { const path = userInstructions(); return { path, text: existsSync(path) ? readFileSync(path, 'utf-8') : null } },
+      set: async (text) => { const path = userInstructions(); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, text) } // created on first save
+    }
   }
 }
 
@@ -70,6 +74,9 @@ export function methodTable(h: object): Record<string, (...args: unknown[]) => P
   walk({ ...rest, asks: { answer: answerAsk }, codec: { info: codecInfo } }, '')
   return out
 }
+
+/** The user-level CLAUDE.md every Claude Code session loads, where Claude Code itself looks for it. */
+const userInstructions = () => join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'CLAUDE.md')
 
 const SKIP = new Set(['node_modules', '.git', 'dist', 'out', 'build', '.next', 'target'])
 const DRIVES = 'Drives' // the folder picker's virtual root on Windows
