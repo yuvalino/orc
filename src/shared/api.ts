@@ -24,6 +24,8 @@ export interface TransportState {
 }
 
 export interface OrcApi {
+  platform: string // window chrome differs per OS
+  menu: { popup(label: string, x: number, y: number): Promise<void> } // the application menu's submenus, for the in-window menu bar off macOS
   projects: {
     list(): Promise<Project[]>
     add(path?: string): Promise<Project | null> // no path: the desktop shows its folder dialog (local targets only)

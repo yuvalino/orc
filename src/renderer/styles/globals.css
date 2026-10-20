@@ -20,6 +20,9 @@
   --color-ok: #4ade80;
   --color-warn: #f5b847;
   --color-bad: #ef4444;
+  --color-bypass: #f97316; /* Bypass permissions: orange, not the red of destructive actions */
+  --color-edge: #3a3a3a; /* resizable pane edges, at rest */
+  --color-edge-hover: #e5e5e5;
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
 }
@@ -39,15 +42,17 @@ input.effort { -webkit-appearance: none; height: 22px; border-radius: 11px; outl
 input.effort::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5); cursor: pointer; }
 .drag { -webkit-app-region: drag; }
 .no-drag { -webkit-app-region: no-drag; }
-/* Windows draws its window controls over the top-right 46px; macOS puts traffic lights top-left in the sidebar header. */
-:root[data-platform="win32"] .titlebar-end { padding-right: 150px; }
-:root[data-platform="win32"] .sidebar-head { padding-top: 12px; }
 @keyframes blink { 50% { opacity: 0; } }
 /* Empty screen → conversation: the transcript fades in while the empty screen fades out on top of it. */
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes fade-out { to { opacity: 0; } }
 .fade-in { animation: fade-in 0.35s ease-out; }
 .fade-out { animation: fade-out 0.28s ease-in forwards; }
+/* Dropdowns that ask for it (Menu `animate`): fade and slide in from the right, and back out. */
+@keyframes menu-in { from { opacity: 0; transform: translateX(12px); } }
+@keyframes menu-out { to { opacity: 0; transform: translateX(12px); } }
+.menu-in { animation: menu-in 0.16s ease-out; }
+.menu-out { animation: menu-out 0.14s ease-in forwards; }
 /* The empty-chat logo: a mild blue glow behind it, drifting up and down a few pixels. */
 .logo-glow { position: relative; display: flex; }
 .logo-glow::before { content: ""; position: absolute; inset: -40%; border-radius: 50%; background: radial-gradient(circle, rgba(56, 189, 248, 0.16) 0%, rgba(56, 189, 248, 0.05) 45%, transparent 70%); pointer-events: none; }

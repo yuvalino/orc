@@ -18,6 +18,7 @@ export function createFakeSdk(dir: string): SdkModule {
 
   const query: SdkModule['query'] = ({ prompt, options = {} }) => {
     const sessionId = (options.resume ?? options.sessionId ?? 'fake') as string
+    let model = options.model, effort = options.effort as string | undefined
     const tok = (options.env as Record<string, string> | undefined)?.CLAUDE_CODE_OAUTH_TOKEN
     if (tok && options.cwd) writeFileSync(join(options.cwd, '.token-seen'), tok) // lets a spec check a forwarded token reached the SDK env
     const out: SDKMessage[] = []; let wake: (() => void) | null = null; let closed = false; let interrupted = false; let stopped = false
@@ -69,7 +70,8 @@ export function createFakeSdk(dir: string): SdkModule {
         emit({ type: 'system', subtype: 'background_tasks_changed', tasks: [], uuid: crypto.randomUUID() })
       },
       close: () => { closed = true; wake?.() },
-      setPermissionMode: async () => {}, setModel: async () => {}, applyFlagSettings: async () => {},
+      setPermissionMode: async () => {}, setModel: async (m?: string) => { model = m }, applyFlagSettings: async (s: { effortLevel?: string | null }) => { if ('effortLevel' in s) effort = s.effortLevel ?? undefined },
+      getSettings: async () => ({ applied: { effort: effort ?? (model === 'sonnet' ? 'medium' : 'high') } }), // each model's own default when none is set
       initializationResult: async () => ({ models: [
         { value: 'default', displayName: 'Default (recommended)', description: 'Opus 4.6 · Best for everyday tasks', supportedEffortLevels: ['low', 'medium', 'high', 'max'] },
         { value: 'opus', displayName: 'Opus 4.6', description: 'Most capable', supportedEffortLevels: ['low', 'medium', 'high', 'max'] },

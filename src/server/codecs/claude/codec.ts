@@ -1,6 +1,6 @@
 import type { EffortLevel, PermissionMode, PermissionResult, PermissionUpdate, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { readFile } from 'fs/promises'
-import type { ApprovalMode, Ask, AskAnswer, Item } from '@shared/types'
+import type { ApprovalMode, Ask, AskAnswer, Item, ModelOption } from '@shared/types'
 import { applyPatch } from '@shared/types'
 import type { Codec, CodecSession, OpenParams, Sink } from '../types'
 import { newReduceState, reduce } from './reduce'
@@ -48,9 +48,28 @@ function toResult(answer: AskAnswer, input: Record<string, unknown>, suggestions
   }
 }
 
+/** The effort the CLI will send next: settings, the model's own default, org caps. getSettings is on the query object but not in its types. */
+const appliedEffort = async (q: Query) => (await (q as Query & { getSettings(): Promise<{ applied?: { effort?: string | null } }> }).getSettings()).applied?.effort ?? null
+
 export class ClaudeCodec implements Codec {
   readonly id = 'claude'
   readonly displayName = 'Claude Code'
+
+  /** The model list, and each model's default effort found by switching an idle process through them (no prompt, no API call). */
+  async info(cwd: string) {
+    const sdk = await loadSdk()
+    const q: Query = sdk.query({ prompt: inputQueue<SDKUserMessage>().iter, options: { cwd, settingSources: ['user', 'project', 'local'], env: { ...process.env, ...cfg.env, CLAUDE_AGENT_SDK_CLIENT_APP: `orc/${cfg.version}` }, pathToClaudeCodeExecutable: cfg.binaryPath } })
+    try {
+      const r = await q.initializationResult()
+      const models = r.models.map(({ value, displayName, description, supportedEffortLevels }) => ({ value, displayName, description, effortLevels: supportedEffortLevels } as ModelOption))
+      for (const m of models) {
+        if (!m.effortLevels?.length || m.value.startsWith('claude-')) continue // the picker offers aliases only
+        if (m.value !== 'default') await q.setModel(m.value)
+        m.defaultEffort = (await appliedEffort(q).catch(() => null)) ?? undefined
+      }
+      return { models, account: r.account ?? null }
+    } finally { q.close() }
+  }
 
   async open(p: OpenParams, sink: Sink): Promise<CodecSession> {
     const sdk = await loadSdk()
@@ -77,6 +96,9 @@ export class ClaudeCodec implements Codec {
       canUseTool: async (toolName, toolInput, opts) => toResult(await sink.ask(toAsk(toolName, toolInput, opts), opts.signal), toolInput, opts.suggestions ?? [], mode)
     } })
 
+    const applied = () => appliedEffort(q).then((effort) => sink.status({ effort })).catch(() => {})
+    q.initializationResult().then(applied, () => {})
+
     ;(async () => {
       try {
         for await (const msg of q as AsyncIterable<SDKMessage>) {
@@ -98,9 +120,8 @@ export class ClaudeCodec implements Codec {
       interrupt: async () => { await q.interrupt() },
       stopTask: (id) => q.stopTask(id),
       setApprovalMode: (m) => { mode = m; return q.setPermissionMode(MODES[m]) },
-      setModel: (m) => q.setModel(m),
-      setEffort: (e) => q.applyFlagSettings({ effortLevel: (e as EffortLevel | undefined) ?? null }),
-      info: async () => { const r = await q.initializationResult(); return { models: r.models.map(({ value, displayName, description, supportedEffortLevels }) => ({ value, displayName, description, effortLevels: supportedEffortLevels })), account: r.account ?? null } },
+      setModel: async (m) => { await q.setModel(m); await applied() },
+      setEffort: async (e) => { await q.applyFlagSettings({ effortLevel: (e as EffortLevel | undefined) ?? null }); await applied() },
       close: () => { input.end(); q.close() }
     }
   }

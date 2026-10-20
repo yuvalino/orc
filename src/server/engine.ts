@@ -3,7 +3,7 @@ import type { ApprovalMode, Ask, AskAnswer, Item, Patch, RuntimeState, Session, 
 import { applyPatch } from '@shared/types'
 import type { PushEvents } from '@shared/api'
 import type { CodecSession } from './codecs/types'
-import { getCodec } from './codecs/registry'
+import { DEFAULT_CODEC, getCodec } from './codecs/registry'
 import { projects, sessions, settings } from './store'
 
 const MAX_OPEN = 4
@@ -64,7 +64,7 @@ export class Engine {
   async send(id: string, text: string): Promise<void> {
     const s = this.session(id), e = this.entries.get(id) ?? (await this.open(id), this.entries.get(id)!)
     const uuid = crypto.randomUUID()
-    this.apply(id, e, { op: 'upsert', item: { kind: 'user', id: uuid, text } })
+    this.apply(id, e, { op: 'upsert', item: { kind: 'user', id: uuid, text, at: Date.now() } })
     if (!e.live) {
       try { await this.start(s, e) } catch (err) {
         this.apply(id, e, { op: 'upsert', item: { kind: 'note', id: crypto.randomUUID(), level: 'error', text: `Could not start ${s.codec}: ${err instanceof Error ? err.message : err}` } })
@@ -182,8 +182,7 @@ export class Engine {
   }
 
   async info() {
-    const live = [...this.entries.values()].find((e) => e.live)
-    return live?.live ? live.live.info() : { models: [], account: null }
+    return getCodec(DEFAULT_CODEC).info(homedir()).catch(() => ({ models: [], account: null }))
   }
 
   close(id: string): void {

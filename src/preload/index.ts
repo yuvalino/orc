@@ -4,6 +4,8 @@ import type { OrcApi } from '@shared/api'
 const call = (ch: string) => (...args: unknown[]) => ipcRenderer.invoke(ch, ...args)
 
 const api: OrcApi = {
+  platform: process.platform,
+  menu: { popup: call('menu.popup') },
   projects: { list: call('projects.list'), add: call('projects.add'), remove: call('projects.remove'), files: call('projects.files'), browse: call('projects.browse') },
   sessions: {
     list: call('sessions.list'), create: call('sessions.create'), open: call('sessions.open'),
@@ -22,4 +24,3 @@ const api: OrcApi = {
 }
 
 contextBridge.exposeInMainWorld('orc', api)
-window.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.platform = process.platform }) // window chrome differs per OS (see globals.css)

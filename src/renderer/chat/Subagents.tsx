@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronLeft, ListTodo, Loader2, X } from 'lucide-react'
 import type { Item } from '@shared/types'
-import { useActive, useStore } from '../stores/store'
+import { Resizer } from '../lib/Resizer'
+import { PANE, useActive, useStore } from '../stores/store'
 import { Turns } from './ChatView'
 import { Logo, isActive, launches, taskName, type Tool } from './agents'
 
@@ -16,20 +17,50 @@ const elapsed = (from: number | undefined, now: number) => { if (!from) return '
 const ago = (at: number | undefined, now: number) => { if (!at) return ''; const m = Math.floor((now - at) / 60_000); return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.floor(m / 60)}h ago` }
 const modelName = (id?: string) => { const m = /^claude-([a-z]+)-(\d+)-(\d+)/.exec(id ?? ''); return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}` : id ?? '' }
 
+/**
+ * The right pane. Opening and closing animate its width: its edge with the conversation sweeps out (or back), and its
+ * content keeps its own width throughout so nothing reflows inside it.
+ */
 export function SubagentsPanel() {
   const { session } = useActive()
-  const { panel, setPanel, stopTask } = useStore()
-  const items = useStore((s) => (session ? s.transcripts[session.id] : undefined)) ?? []
-  if (!panel || !session) return null
+  const { panel, setWidth, widths } = useStore()
+  const want = !!panel && !!session
+  const [mounted, setMounted] = useState(want), [shown, setShown] = useState(want), [animating, setAnimating] = useState(false)
+  const last = useRef({ panel, session }) // what it showed, kept on screen while it fades out
+  if (want) last.current = { panel, session }
+  useEffect(() => {
+    if (want === shown) return
+    setAnimating(true)
+    if (!want) { setShown(false); return }
+    setMounted(true)
+    const f = requestAnimationFrame(() => requestAnimationFrame(() => setShown(true))) // mount closed, then open, so the transition runs
+    return () => cancelAnimationFrame(f)
+  }, [want])
+  if (!mounted || !last.current.panel || !last.current.session) return null
+  return (
+    <div data-pane="subagents" style={{ width: shown ? widths.panel : 0, clipPath: 'inset(0 0 0 -8px)' }} // the clip leaves room for the resize edge
+      onTransitionEnd={(e) => { if (e.target !== e.currentTarget || e.propertyName !== 'width') return; setAnimating(false); if (!shown) setMounted(false) }}
+      className={`relative shrink-0 ${animating ? 'transition-[width] duration-200 ease-out' : ''}`}>
+      <aside style={{ width: widths.panel }} className="absolute inset-y-0 right-0 flex flex-col bg-bg">
+        {shown && !animating && <Resizer edge="left" width={widths.panel} {...PANE.panel} onResize={(w) => setWidth('panel', w)} />}
+        <Body panel={last.current.panel} sessionId={last.current.session.id} />
+      </aside>
+    </div>
+  )
+}
+
+function Body({ panel, sessionId }: { panel: { toolUseId: string | null }; sessionId: string }) {
+  const { setPanel, stopTask } = useStore()
+  const items = useStore((s) => s.transcripts[sessionId]) ?? []
   const tools = launches(items), open = panel.toolUseId ? tools.find((t) => t.toolUseId === panel.toolUseId) : undefined
   return (
-    <aside className="flex w-[330px] shrink-0 flex-col border-l border-line bg-bg">
-      <div className="titlebar-end drag flex h-[46px] shrink-0 items-center border-b border-line px-3">
-        <span className="no-drag flex items-center gap-2 rounded-md bg-bg-active px-2.5 py-1 text-[13px] text-fg-bright"><ListTodo size={14} /> Subagents<button onClick={() => setPanel(null)} className="text-fg-2 hover:text-fg-bright" title="Close"><X size={14} /></button></span>
+    <>
+      <div className="flex h-[46px] shrink-0 items-center border-b border-line px-3">
+        <span title="Subagents (middle-click to close)" onMouseDown={(e) => e.button === 1 && e.preventDefault()} onAuxClick={(e) => e.button === 1 && setPanel(null)} className="flex cursor-default select-none items-center gap-2 rounded-md bg-bg-active px-2.5 py-1 text-[13px] text-fg-bright"><ListTodo size={14} /> Subagents<button onClick={() => setPanel(null)} className="text-fg-2 hover:text-fg-bright" title="Close"><X size={14} /></button></span>
       </div>
       {open ? <Thread tool={open} items={items} back={() => setPanel({ toolUseId: null })} stop={stopTask} />
         : <TaskList tools={tools} onOpen={(t) => setPanel({ toolUseId: t.toolUseId })} stop={stopTask} />}
-    </aside>
+    </>
   )
 }
 

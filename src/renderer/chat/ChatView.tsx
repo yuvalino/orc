@@ -34,7 +34,6 @@ export function ChatView() {
   const { session, project } = useActive()
   const items = useStore((s) => (session ? s.transcripts[session.id] : undefined))
   const status = useStore((s) => (session ? s.status[session.id] : undefined))
-  const panel = useStore((s) => s.panel)
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const [leaving, setLeaving] = useState(false) // the empty screen fading out over the first turn
@@ -50,17 +49,10 @@ export function ChatView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className={`drag flex h-[46px] shrink-0 items-center gap-2 border-b border-line px-4 text-[14px] font-medium text-fg-bright ${panel ? '' : 'titlebar-end'}`}>
-        <Folder size={18} className="shrink-0 text-fg-2" />
-        <span className="truncate">{session ? sessionTitle(session) : <span className="text-fg-2">New session</span>}</span>
-        <div className="no-drag ml-auto flex shrink-0 items-center gap-2">
-          {status?.rateLimit && <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[11px] text-warn">Usage {Math.round((status.rateLimit.utilization ?? 0) * 100)}%</span>}
-          {session && <SubagentsButton />}
-        </div>
-      </div>
+      {window.orc.platform !== 'darwin' && <div className="flex h-[46px] shrink-0 items-center gap-2 border-b border-line px-4"><ChatHeader /></div>} {/* on macOS it is part of the title bar */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         {session && (
-          <div key={session.id} ref={ref} onScroll={onScroll} className="fade-in min-h-0 flex-1 overflow-y-auto px-[100px] py-3">
+          <div key={session.id} ref={ref} onScroll={onScroll} style={{ paddingInline: 'clamp(16px, 8%, 100px)' }} className="fade-in min-h-0 flex-1 overflow-y-auto py-3">
             <Turns items={items ?? []} running={!!status && status.state !== 'idle' && status.state !== 'closed'} />
           </div>
         )}
@@ -73,6 +65,24 @@ export function ChatView() {
         )}
       </div>
     </div>
+  )
+}
+
+/** The open chat's title on the left, its usage and Subagents button on the right. */
+export function ChatHeader() {
+  const { session } = useActive()
+  const status = useStore((s) => (session ? s.status[session.id] : undefined))
+  return (
+    <>
+      <span className="flex min-w-0 items-center gap-2 text-[14px] font-medium text-fg-bright">
+        <Folder size={18} className="shrink-0 text-fg-2" />
+        <span className="truncate">{session ? sessionTitle(session) : <span className="text-fg-2">New session</span>}</span>
+      </span>
+      <div className="no-drag ml-auto flex shrink-0 items-center gap-2">
+        {status?.rateLimit && <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[11px] text-warn">Usage {Math.round((status.rateLimit.utilization ?? 0) * 100)}%</span>}
+        {session && <SubagentsButton />}
+      </div>
+    </>
   )
 }
 
@@ -90,7 +100,7 @@ function TurnView({ turn, running }: { turn: Turn; running: boolean }) {
       {turn.final.map((it) => it.kind === 'note' ? <WorkItem key={it.id} item={it} /> : it.kind === 'text' && (
         <div key={it.id} className="group">
           <div className={it.streaming ? 'caret' : ''}><Markdown text={it.text} /></div>
-          {!it.streaming && <Actions text={it.text} />}
+          {!it.streaming && <Actions text={it.text} at={it.at} />}
         </div>
       ))}
       {turn.end?.stopped && <div className="text-[12.5px] text-fg-3">Stopped</div>}
@@ -98,12 +108,22 @@ function TurnView({ turn, running }: { turn: Turn; running: boolean }) {
   )
 }
 
-function Actions({ text }: { text: string }) {
+/** "03:45 PM" today, "Monday 03:45 PM" within the week, "10/12/2026 03:45 PM" before that. */
+function sentAt(at: number): string {
+  const d = new Date(at), time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
+  const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 86_400_000)
+  return days <= 0 ? time : days < 7 ? `${d.toLocaleDateString([], { weekday: 'long' })} ${time}` : `${d.toLocaleDateString()} ${time}`
+}
+
+/** The buttons under a reply stay visible; the time it was sent shows beside them on hover. */
+function Actions({ text, at }: { text: string; at?: number }) {
   const [copied, setCopied] = useState(false)
+  const offset = useStore((s) => s.transport?.clockOffset ?? 0) // `at` is the engine's clock, which may be another machine's
   const copy = () => navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
   return (
-    <div className="mt-1.5 flex gap-0.5 opacity-0 group-hover:opacity-100">
+    <div className="mt-1.5 flex items-center gap-0.5">
       <button className="flex size-7 items-center justify-center rounded-md text-fg-3 hover:bg-bg-hover hover:text-fg-2" onClick={copy} title="Copy">{copied ? <Check size={16} /> : <Copy size={16} />}</button>
+      {at && <span className="ml-1.5 text-[12px] text-fg-3 opacity-0 group-hover:opacity-100">{sentAt(at - offset)}</span>}
     </div>
   )
 }

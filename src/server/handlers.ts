@@ -8,7 +8,7 @@ import type { Engine, Push } from './engine'
 import { projects, sessions, settings } from './store'
 
 /** The engine's half of OrcApi: everything but transport (desktop-side) and the push channel. A path is required for add — the native folder dialog lives in the desktop shell. */
-export type Handlers = Omit<OrcApi, 'on' | 'transport' | 'projects'> & { projects: Omit<OrcApi['projects'], 'add'> & { add(path: string): Promise<OrcApi['projects'] extends { add(...a: never[]): Promise<infer R> } ? R : never> } }
+export type Handlers = Omit<OrcApi, 'on' | 'platform' | 'menu' | 'transport' | 'projects'> & { projects: Omit<OrcApi['projects'], 'add'> & { add(path: string): Promise<OrcApi['projects'] extends { add(...a: never[]): Promise<infer R> } ? R : never> } }
 
 export function createHandlers(engine: Engine, push: Push): Handlers {
   return {

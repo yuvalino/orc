@@ -10,13 +10,21 @@ test('saved transcripts reload, pins, rename, and interrupt', async () => {
 
   // Rename edits the title in place.
   const row = page.locator('div.group', { hasText: 'Other chat' }).first()
-  await row.hover()
-  await row.getByTitle('Chat menu').click()
+  await row.click({ button: 'right' })
   await page.getByText('Rename').click()
   await page.getByLabel('Chat title').fill('Renamed chat')
   await page.getByLabel('Chat title').press('Enter')
   await expect(page.getByText('Renamed chat').first()).toBeVisible()
   await expect(page.getByText('Other chat')).toHaveCount(0)
+
+  // The same menu pins and unpins.
+  const count = await page.getByText('Renamed chat').count()
+  await page.locator('div.group', { hasText: 'Renamed chat' }).first().click({ button: 'right' })
+  await page.getByRole('menu').getByText('Pin', { exact: true }).click()
+  await expect(page.getByText('Renamed chat')).toHaveCount(count + 1) // also under Pinned
+  await page.locator('div.group', { hasText: 'Renamed chat' }).first().click({ button: 'right' })
+  await page.getByRole('menu').getByText('Unpin', { exact: true }).click()
+  await expect(page.getByText('Renamed chat')).toHaveCount(count)
 
   // history-1 has a recorded transcript: the user prompt and the reply both come back.
   await page.getByRole('button', { name: 'New chat' }).click()
@@ -43,11 +51,11 @@ test('saved transcripts reload, pins, rename, and interrupt', async () => {
   // Deleting the open chat returns to a fresh composer; removing a project takes its chats with it.
   page.on('dialog', (d) => d.accept())
   const renamed = page.locator('div.group', { hasText: 'Renamed chat' }).first()
-  await renamed.hover(); await renamed.getByTitle('Chat menu').click(); await page.getByText('Delete').click()
+  await renamed.click({ button: 'right' }); await page.getByText('Delete').click()
   await expect(page.getByText('Start a conversation')).toBeVisible()
   await expect(page.getByText('Renamed chat')).toHaveCount(0)
   const proj = page.locator('div.group', { hasText: 'Fixture Project' }).first()
-  await proj.hover(); await proj.locator('button').last().click(); await page.getByText('Remove project').click()
+  await proj.click({ button: 'right' }); await page.getByText('Remove project').click()
   await expect(page.getByText('No projects yet')).toBeVisible()
   await expect(page.getByText('Recorded chat')).toHaveCount(0)
   await c.close()

@@ -29,6 +29,7 @@ export type RuntimeState = 'closed' | 'starting' | 'idle' | 'running' | 'require
 export interface SessionStatus {
   state: RuntimeState
   model?: string
+  effort?: string | null // the level the CLI will send next (settings, the model's default, org caps); null: none
   tasks?: number // live subagents / background commands, which can outlast a turn
   rateLimit?: { status: 'allowed_warning' | 'rejected'; utilization?: number; resetsAt?: number }
 }
@@ -64,8 +65,8 @@ export type AskAnswer =
   | { type: 'plan'; decision: 'approve' | 'approve-edits' | 'reject'; feedback?: string }
 
 export type Item =
-  | { kind: 'user'; id: string; text: string; parent?: string | null } // parent: the prompt a tool call gave its subagent
-  | { kind: 'text'; id: string; text: string; streaming: boolean; parent: string | null }
+  | { kind: 'user'; id: string; text: string; parent?: string | null; at?: number } // parent: the prompt a tool call gave its subagent; at: when it was sent (engine clock)
+  | { kind: 'text'; id: string; text: string; streaming: boolean; parent: string | null; at?: number }
   | { kind: 'thinking'; id: string; text: string; streaming: boolean; parent: string | null }
   | { kind: 'tool'; id: string; toolUseId: string; name: string; input: unknown; status: ToolStatus; parent: string | null; result?: { text: string; isError: boolean; data?: unknown }; task?: TaskInfo }
   | { kind: 'ask'; id: string; ask: Ask; answer?: AskAnswer; cancelled?: true }
@@ -91,5 +92,5 @@ export function applyPatch(items: Item[], p: Patch): Item[] {
   }
 }
 
-export interface ModelOption { value: string; displayName: string; description?: string; effortLevels?: string[] }
+export interface ModelOption { value: string; displayName: string; description?: string; effortLevels?: string[]; defaultEffort?: string } // defaultEffort: what the CLI uses when no level is chosen
 export interface Account { email?: string; subscriptionType?: string }

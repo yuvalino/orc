@@ -23,9 +23,9 @@ type Out = { patches: Patch[]; status?: Partial<SessionStatus>; readOutput?: { i
 const textOf = (c: unknown): string =>
   typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => (b?.type === 'text' ? b.text : '')).join('') : ''
 
-function blockItem(st: ReduceState, id: string, b: Block, parent: string | null, streaming: boolean): Item | null {
+function blockItem(st: ReduceState, id: string, b: Block, parent: string | null, streaming: boolean, at: number): Item | null {
   switch (b.type) {
-    case 'text': return { kind: 'text', id, text: b.text ?? '', streaming, parent }
+    case 'text': return { kind: 'text', id, text: b.text ?? '', streaming, parent, at }
     case 'thinking': return { kind: 'thinking', id, text: b.thinking ?? '', streaming, parent }
     case 'tool_use':
       st.toolItems[b.id!] = id
@@ -57,7 +57,7 @@ export function reduce(st: ReduceState, msg: SDKMessage): Out {
       if (e.type === 'message_start') { st.msgId[key] = e.message.id; if (!parent) return { patches, status: { state: 'running' } } } // the CLI starts turns on its own when background work finishes
       const id = `${st.msgId[key]}:${e.index}`
       if (e.type === 'content_block_start') {
-        const item = blockItem(st, id, e.content_block, parent, true)
+        const item = blockItem(st, id, e.content_block, parent, true, Date.now())
         if (item) patches.push({ op: 'upsert', item })
         if (e.content_block.type === 'tool_use') st.json[id] = ''
       } else if (e.type === 'content_block_delta') {
@@ -80,7 +80,7 @@ export function reduce(st: ReduceState, msg: SDKMessage): Out {
       // Live: one frame per completed block, consecutive frames share message.id. History: all blocks in one frame.
       const base = blocks.length === 1 ? (st.frames[mid] = (st.frames[mid] ?? 0) + 1) - 1 : 0
       blocks.forEach((b, i) => {
-        const item = blockItem(st, `${mid}:${base + i}`, b, parent, false)
+        const item = blockItem(st, `${mid}:${base + i}`, b, parent, false, (m.timestamp && Date.parse(m.timestamp)) || Date.now())
         if (item) patches.push({ op: 'upsert', item })
         if (b.type === 'tool_use' && m.timestamp) st.times[b.id!] = Date.parse(m.timestamp)
       })
@@ -107,7 +107,7 @@ export function reduce(st: ReduceState, msg: SDKMessage): Out {
         patches.push({ op: 'upsert', item: { kind: 'turn_end', id: m.uuid ?? crypto.randomUUID(), durationMs: 0, isError: false } })
         const rel = /<tool-use-id>(\S+?)<\/tool-use-id>[\s\S]*?<status>(\w+)<\/status>/.exec(text), id = rel && st.toolItems[rel[1]]
         if (id && rel[2] in TASK_END) { const s = rel[2] as keyof typeof TASK_END; setTask(st, patches, id, { status: s }); patches.push({ op: 'update', id, partial: { status: TASK_END[s] } }) }
-      } else patches.push({ op: 'upsert', item: { kind: 'user', id: m.uuid ?? crypto.randomUUID(), text, parent } }) // with parent: the prompt a subagent was given
+      } else patches.push({ op: 'upsert', item: { kind: 'user', id: m.uuid ?? crypto.randomUUID(), text, parent, at: (m.timestamp && Date.parse(m.timestamp)) || Date.now() } }) // with parent: the prompt a subagent was given
       break
     }
     case 'result': {

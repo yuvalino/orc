@@ -18,6 +18,8 @@ interface State {
   draft: string
   palette: null | 'chats' | 'files' | 'hosts' | 'folders' | 'signin'
   panel: null | { toolUseId: string | null } // Subagents panel: closed, the lists, or one agent's thread
+  sidebarOpen: boolean
+  widths: { sidebar: number; panel: number } // remembered per browser profile (localStorage)
   defaults: Defaults
   transport: TransportState | null // null until the first state arrives
 
@@ -29,6 +31,9 @@ interface State {
   interrupt(): Promise<void>
   stopTask(taskId: string): Promise<void>
   setPanel(panel: State['panel']): void
+  toggleSidebar(): void
+  setWidth(pane: 'sidebar' | 'panel', w: number): void
+  fitPanes(): void // shrink the side panes until the conversation fits its composer (window resized, a label grew, a pane opened)
   answer(askId: string, answer: AskAnswer): Promise<void>
   update(id: string, patch: Parameters<Window['orc']['sessions']['update']>[1]): Promise<void>
   setDraft(text: string): void
@@ -39,8 +44,29 @@ interface State {
 
 const api = () => window.orc
 
+/** Side panes resize between these; the conversation takes the rest. */
+export const PANE = { sidebar: { min: 220, max: 440, initial: 292 }, panel: { min: 280, max: 560, initial: 330 } } as const
+/** The composer's side padding: a share of the conversation's width, between these bounds. */
+export const COMPOSER_PAD = { min: 16, share: 0.08, max: 100 }
+/** The narrowest the conversation may get: the composer's bottom row (mode, model, send) shown in full, plus that padding. */
+function minMain(): number {
+  const row = document.querySelector<HTMLElement>('[data-composer-row]')
+  if (!row) return 360
+  const cs = getComputedStyle(row), kids = [...row.children] as HTMLElement[]
+  const content = kids.filter((k) => !k.dataset.spacer).reduce((a, k) => a + k.offsetWidth, 0) + (kids.length - 1) * (parseFloat(cs.columnGap) || 0)
+  const box = content + parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
+  return Math.ceil(Math.max(box + 2 * COMPOSER_PAD.min, box / (1 - 2 * COMPOSER_PAD.share))) // whichever padding applies at that width
+}
+const saveWidths = (w: State['widths']) => { try { localStorage.setItem('orc.widths', JSON.stringify(w)) } catch { /* not persisted */ } }
+
+function loadWidths(): State['widths'] {
+  const clamp = (v: unknown, p: (typeof PANE)['sidebar' | 'panel']) => (typeof v === 'number' ? Math.min(p.max, Math.max(p.min, v)) : p.initial)
+  try { const w = JSON.parse(localStorage.getItem('orc.widths') ?? '{}'); return { sidebar: clamp(w.sidebar, PANE.sidebar), panel: clamp(w.panel, PANE.panel) } }
+  catch { return { sidebar: PANE.sidebar.initial, panel: PANE.panel.initial } }
+}
+
 export const useStore = create<State>((set, get) => ({
-  projects: [], sessions: [], activeId: null, draftProjectId: null, transcripts: {}, status: {}, models: [], account: null, draft: '', palette: null, panel: null,
+  projects: [], sessions: [], activeId: null, draftProjectId: null, transcripts: {}, status: {}, models: [], account: null, draft: '', palette: null, panel: null, sidebarOpen: true, widths: loadWidths(),
   defaults: { approvalMode: 'ask', model: null, effort: null }, transport: null,
 
   init() {
@@ -48,6 +74,7 @@ export const useStore = create<State>((set, get) => ({
     // Everything the engine knows is (re)fetched whenever the transport reports ready: at startup, and after a reconnect or take-over.
     const load = async () => {
       set({ transcripts: {}, status: {}, models: [], account: null })
+      loadModels() // a short-lived process lists the models and their default effort; the cached list below covers the second it takes
       api().projects.list().then((projects) => set((s) => ({ projects, draftProjectId: s.draftProjectId ?? projects[0]?.id ?? null }))) // a fresh chat starts in a project when one exists
       Promise.all((['approvalMode', 'model', 'effort'] as const).map((k) => api().settings.get(k))).then(([approvalMode, model, effort]) =>
         set((s) => ({ defaults: { approvalMode: (approvalMode as ApprovalMode) ?? s.defaults.approvalMode, model: (model as string) ?? null, effort: (effort as string) ?? null } })))
@@ -58,7 +85,6 @@ export const useStore = create<State>((set, get) => ({
       const pairs = await Promise.all(sessions.map(async (x) => [x.id, await api().sessions.status(x.id)] as const))
       const live = pairs.filter(([, st]) => st.state !== 'closed')
       set((s) => ({ status: { ...Object.fromEntries(live), ...s.status } }))
-      if (live.length) loadModels()
       const id = get().activeId
       if (id) { set({ activeId: null }); get().select(id) }
     }
@@ -75,7 +101,6 @@ export const useStore = create<State>((set, get) => ({
       set((s) => (s.transcripts[sessionId] ? { transcripts: { ...s.transcripts, [sessionId]: applyPatch(s.transcripts[sessionId], patch) } } : s))) // unloaded chats are fetched whole on select
     api().on('session:status', ({ sessionId, status }) => {
       set((s) => ({ status: { ...s.status, [sessionId]: status } }))
-      if (!get().account && status.state !== 'closed' && status.state !== 'starting') loadModels()
     })
     api().on('menu:new-chat', () => get().newChat())
   },
@@ -109,7 +134,23 @@ export const useStore = create<State>((set, get) => ({
 
   async interrupt() { const id = get().activeId; if (id) await api().sessions.interrupt(id) },
   async stopTask(taskId) { const id = get().activeId; if (id) await api().sessions.stopTask(id, taskId) },
-  setPanel: (panel) => set({ panel }),
+  setPanel: (panel) => { set({ panel }); get().fitPanes() },
+  toggleSidebar: () => { set((s) => ({ sidebarOpen: !s.sidebarOpen })); get().fitPanes() },
+  setWidth(pane, w) {
+    const s = get(), other = pane === 'sidebar' ? (s.panel && s.activeId ? s.widths.panel : 0) : (s.sidebarOpen ? s.widths.sidebar : 0)
+    w = Math.max(PANE[pane].min, Math.min(w, innerWidth - other - minMain())) // never so wide the composer's bottom row would overflow
+    if (w === s.widths[pane]) return
+    const widths = { ...s.widths, [pane]: w }; set({ widths }); saveWidths(widths)
+  },
+  fitPanes() {
+    const s = get(), panel = !!(s.panel && s.activeId)
+    let { sidebar, panel: p } = s.widths, over = (s.sidebarOpen ? sidebar : 0) + (panel ? p : 0) + minMain() - innerWidth
+    if (over <= 0) return
+    if (panel) { const d = Math.min(over, p - PANE.panel.min); p -= d; over -= d } // the right pane gives way first
+    if (s.sidebarOpen && over > 0) sidebar -= Math.min(over, sidebar - PANE.sidebar.min)
+    if (sidebar === s.widths.sidebar && p === s.widths.panel) return
+    const widths = { sidebar, panel: p }; set({ widths }); saveWidths(widths)
+  },
   async answer(askId, answer) { await api().answerAsk(askId, answer) },
   async update(id, patch) { await api().sessions.update(id, patch) },
   setDraft: (draft) => set({ draft }),

@@ -22,7 +22,6 @@ export interface CodecSession {
   setApprovalMode(mode: ApprovalMode): Promise<void>
   setModel(model?: string): Promise<void>
   setEffort(effort?: string): Promise<void>
-  info(): Promise<{ models: ModelOption[]; account: Account | null }>
   close(): void
 }
 
@@ -31,6 +30,7 @@ export interface Codec {
   readonly id: string
   readonly displayName: string
   open(params: OpenParams, sink: Sink): Promise<CodecSession>
+  info(cwd: string): Promise<{ models: ModelOption[]; account: Account | null }> // from a short-lived process that never sends a prompt
   loadTranscript(sessionId: string, cwd: string): Promise<Item[]>
   sessionInfo(sessionId: string, cwd: string): Promise<{ title?: string } | undefined>
   rename(sessionId: string, cwd: string, title: string): Promise<void>

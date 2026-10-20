@@ -1,19 +1,21 @@
 import { useState } from 'react'
-import { Ellipsis, Folder, Loader2, Pin, PinOff, Plus, Search, SquarePen } from 'lucide-react'
+import { Folder, Loader2, Pin, PinOff, Plus, Search, SquarePen } from 'lucide-react'
 import type { Project, Session } from '@shared/types'
-import { Menu } from '../lib/Menu'
-import { sessionTitle, useStore } from '../stores/store'
+import { useContextMenu } from '../lib/Menu'
+import { Resizer } from '../lib/Resizer'
+import { PANE, sessionTitle, useStore } from '../stores/store'
+import logo from '../assets/logo.png'
 
 export function Sidebar() {
-  const { projects, sessions, newChat, openPalette, transport } = useStore()
+  const { projects, sessions, newChat, openPalette, transport, widths, setWidth } = useStore()
   const recent = [...sessions].sort((a, b) => b.lastActivityAt - a.lastActivityAt)
   const pinned = recent.filter((s) => s.isPinned)
   return (
-    <aside className="flex w-[292px] shrink-0 flex-col border-r border-line bg-bg-sidebar">
-      {/* Traffic lights sit in this header (hiddenInset), hence the top padding and drag region. */}
-      <div className="sidebar-head drag flex items-center justify-between pb-1.5 pl-4 pr-3 pt-10">
-        <span className="flex items-center gap-2 text-[16px] font-semibold text-fg-bright">orc{transport?.kind === 'remote' && <span className="rounded-md bg-accent/20 px-1.5 py-0.5 text-[11px] font-medium text-[#93b4ff]">ssh: {transport.host}</span>}</span>
-        <button onClick={() => openPalette('chats')} title={`Search chats (${navigator.platform.startsWith('Win') ? 'Ctrl+K' : '⌘K'})`} className="no-drag flex size-8 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><Search size={18} strokeWidth={1.8} /></button>
+    <aside style={{ width: widths.sidebar }} className="relative flex shrink-0 flex-col bg-bg-sidebar">
+      <Resizer edge="right" width={widths.sidebar} {...PANE.sidebar} onResize={(w) => setWidth('sidebar', w)} />
+      <div className="flex items-center justify-between pb-1.5 pl-4 pr-3 pt-2">
+        <span className="flex items-center gap-2 text-[16px] font-semibold text-fg-bright"><img src={logo} alt="" className="size-[20px]" draggable={false} />orc{transport?.kind === 'remote' && <span className="rounded-md bg-accent/20 px-1.5 py-0.5 text-[11px] font-medium text-[#93b4ff]">ssh: {transport.host}</span>}</span>
+        <button onClick={() => openPalette('chats')} title={`Search chats (${window.orc.platform === 'darwin' ? '⌘P' : 'Ctrl+P'})`} className="no-drag flex size-8 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><Search size={18} strokeWidth={1.8} /></button>
       </div>
       <button onClick={() => newChat()} className="mb-1 mt-1.5 flex w-full items-center gap-2 py-[5px] pl-[18px] pr-4 text-[14px] text-fg-bright hover:bg-bg-hover"><SquarePen size={15} /> New chat</button>
 
@@ -65,16 +67,14 @@ function Trailing({ indicator, children }: { indicator: React.ReactNode; childre
 function ProjectRow({ p, chats }: { p: Project; chats: Session[] }) {
   const { newChat, draftProjectId, activeId } = useStore()
   const selected = !activeId && draftProjectId === p.id
+  const ctx = useContextMenu(() => [{ label: 'New chat', onSelect: () => newChat(p.id) }, { label: 'Remove project', danger: true, onSelect: () => confirm(`Remove "${p.name ?? p.path.split(/[\\/]/).pop()}" and its ${chats.length} chat${chats.length === 1 ? '' : 's'}?`) && window.orc.projects.remove(p.id) }])
   return (
     <div>
-      <div onClick={() => newChat(p.id)} className={`group flex cursor-pointer items-center gap-[7px] rounded-md px-2.5 py-[3px] text-[14px] font-medium text-fg ${selected ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}>
+      <div onClick={() => newChat(p.id)} onContextMenu={ctx.onContextMenu} className={`group flex cursor-pointer items-center gap-[7px] rounded-md px-2.5 py-[3px] text-[14px] font-medium text-fg ${selected ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}>
         <Folder size={16} className="shrink-0 text-fg-2" />
         <span className="truncate">{p.name ?? p.path.split(/[\\/]/).pop()}</span>
-        <Trailing indicator={<Indicator ids={chats.map((c) => c.id)} />}>
-        <Menu align="right"
-          trigger={<button className="rounded p-0.5 text-fg-3 hover:text-fg"><Ellipsis size={14} /></button>}
-          items={[{ label: 'New chat', onSelect: () => newChat(p.id) }, { label: 'Remove project', danger: true, onSelect: () => confirm(`Remove "${p.name ?? p.path.split(/[\\/]/).pop()}" and its ${chats.length} chat${chats.length === 1 ? '' : 's'}?`) && window.orc.projects.remove(p.id) }]} />
-        </Trailing>
+        <span className="ml-auto flex shrink-0 items-center"><Indicator ids={chats.map((c) => c.id)} /></span>
+        {ctx.menu}
       </div>
       {chats.slice(0, 5).map((s) => <ChatRow key={s.id} s={s} nested />)}
     </div>
@@ -85,8 +85,13 @@ function ChatRow({ s, nested }: { s: Session; nested?: boolean }) {
   const { activeId, select, update } = useStore()
   const [renaming, setRenaming] = useState(false) // window.prompt() is unavailable in Electron, so the title is edited in place
   const commit = (t: string) => { setRenaming(false); if (t.trim() && t.trim() !== sessionTitle(s)) update(s.id, { title: t.trim() }) }
+  const ctx = useContextMenu(() => [
+    { label: s.isPinned ? 'Unpin' : 'Pin', onSelect: () => update(s.id, { isPinned: !s.isPinned }) },
+    { label: 'Rename', onSelect: () => setRenaming(true) },
+    { label: 'Delete', danger: true, onSelect: () => confirm(`Delete "${sessionTitle(s)}"?`) && window.orc.sessions.remove(s.id) }
+  ])
   return (
-    <div onClick={() => select(s.id)} className={`group flex cursor-pointer items-center gap-2 rounded-md py-[3px] pr-1 text-[14px] ${nested ? 'pl-[38px]' : 'pl-2.5'} ${activeId === s.id ? 'bg-bg-active text-fg-bright' : 'text-fg-sub hover:bg-bg-hover hover:text-fg-bright'}`}>
+    <div onClick={() => select(s.id)} onContextMenu={ctx.onContextMenu} className={`group flex cursor-pointer items-center gap-2 rounded-md py-[3px] pr-1 text-[14px] ${nested ? 'pl-[38px]' : 'pl-2.5'} ${activeId === s.id ? 'bg-bg-active text-fg-bright' : 'text-fg-sub hover:bg-bg-hover hover:text-fg-bright'}`}>
       {renaming
         ? <input autoFocus defaultValue={sessionTitle(s)} aria-label="Chat title" onClick={(e) => e.stopPropagation()} onBlur={(e) => commit(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') commit(e.currentTarget.value); if (e.key === 'Escape') setRenaming(false) }}
@@ -94,13 +99,8 @@ function ChatRow({ s, nested }: { s: Session; nested?: boolean }) {
         : <span className="truncate">{sessionTitle(s)}</span>}
       <Trailing indicator={<Indicator ids={[s.id]} />}>
         <button title={s.isPinned ? 'Unpin' : 'Pin'} onClick={(e) => { e.stopPropagation(); update(s.id, { isPinned: !s.isPinned }) }} className="rounded p-0.5 text-fg-3 hover:text-fg">{s.isPinned ? <PinOff size={14} /> : <Pin size={14} />}</button>
-        <Menu align="right"
-          trigger={<button title="Chat menu" className="rounded p-0.5 text-fg-3 hover:text-fg"><Ellipsis size={14} /></button>}
-          items={[
-            { label: 'Rename', onSelect: () => setRenaming(true) },
-            { label: 'Delete', danger: true, onSelect: () => confirm(`Delete "${sessionTitle(s)}"?`) && window.orc.sessions.remove(s.id) }
-          ]} />
       </Trailing>
+      {ctx.menu}
     </div>
   )
 }
