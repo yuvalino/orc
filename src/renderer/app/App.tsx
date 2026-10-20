@@ -16,6 +16,8 @@ export default function App() {
   useEffect(() => {
     init()
     const run: Record<ShortcutAction, () => void> = {
+      back: () => useStore.getState().go(-1),
+      forward: () => useStore.getState().go(1),
       newChat: () => useStore.getState().newChat(),
       newWindow: () => window.orc.window.open(),
       search: () => useStore.getState().openPalette('chats'),
@@ -28,8 +30,9 @@ export default function App() {
       const combo = comboOf(e), action = combo && (Object.keys(s.shortcuts) as ShortcutAction[]).find((a) => s.shortcuts[a].includes(combo))
       if (action) { e.preventDefault(); run[action]() }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const onMouse = (e: MouseEvent) => { if (e.button === 3 || e.button === 4) { e.preventDefault(); useStore.getState().go(e.button === 3 ? -1 : 1) } } // a mouse's back/forward buttons
+    window.addEventListener('keydown', onKey); window.addEventListener('mouseup', onMouse)
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mouseup', onMouse) }
   }, [])
   useEffect(() => { document.title = transport?.kind === 'remote' ? `orc — ${transport.host}` : 'orc' }, [transport?.host])
   if (!transport || transport.phase !== 'ready') return <div className="flex h-full">{transport && <Connect t={transport} />}<Palette /></div> // the palette still signs in or opens another host

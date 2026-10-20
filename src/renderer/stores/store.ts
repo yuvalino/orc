@@ -43,6 +43,8 @@ interface State {
   closeSettings(): void
   setSettings(s: NonNullable<State['settings']>): void
   setShortcut(action: ShortcutAction, index: number, combo: string): void // a combo moves here from any action that had it
+  history: { views: View[]; at: number } // the places this window has been, for back and forward
+  go(step: -1 | 1): void // back or forward through history
   fitPanes(): void // shrink the side panes until the conversation fits its composer (window resized, a label grew, a pane opened)
   answer(askId: string, answer: AskAnswer): Promise<void>
   update(id: string, patch: Parameters<Window['orc']['sessions']['update']>[1]): Promise<void>
@@ -55,6 +57,12 @@ interface State {
 const api = () => window.orc
 
 export type SettingsTab = 'general' | 'personalization' | 'shortcuts'
+
+/** Where the window is: the open chat (or a new one, in a project), or a settings page. Back and forward step through these. */
+export type View = Pick<State, 'activeId' | 'activeRow' | 'draftProjectId' | 'settings'>
+const viewOf = (s: State): View => ({ activeId: s.activeId, activeRow: s.activeRow, draftProjectId: s.draftProjectId, settings: s.settings })
+const sameView = (a: View | undefined, b: View) => JSON.stringify(a) === JSON.stringify(b)
+let restoring = false // going back or forward: the move itself isn't a new place
 
 function loadShortcuts(): Shortcuts {
   const d = defaultShortcuts()
@@ -92,7 +100,7 @@ function loadWidths(): State['widths'] {
 }
 
 export const useStore = create<State>((set, get) => ({
-  projects: [], sessions: [], activeId: null, activeRow: null, draftProjectId: null, transcripts: {}, status: {}, models: [], account: null, draft: '', palette: null, panel: null, sidebarOpen: true, collapsed: loadCollapsed(), widths: loadWidths(), settings: null, shortcuts: loadShortcuts(),
+  projects: [], sessions: [], activeId: null, activeRow: null, draftProjectId: null, transcripts: {}, status: {}, models: [], account: null, draft: '', palette: null, panel: null, sidebarOpen: true, collapsed: loadCollapsed(), widths: loadWidths(), settings: null, shortcuts: loadShortcuts(), history: { views: [{ activeId: null, activeRow: null, draftProjectId: null, settings: null }], at: 0 },
   defaults: { approvalMode: 'ask', model: null, effort: null }, transport: null,
 
   init() {
@@ -185,6 +193,18 @@ export const useStore = create<State>((set, get) => ({
     set({ shortcuts }); menuShortcuts(shortcuts)
     try { localStorage.setItem('orc.shortcuts', JSON.stringify(shortcuts)) } catch { /* not persisted */ }
   },
+  go(step) {
+    const { views, at } = get().history
+    let i = at + step
+    while (views[i]?.activeId && !get().sessions.some((s) => s.id === views[i].activeId)) i += step // a chat deleted since: skip it
+    const v = views[i]
+    if (!v) return
+    restoring = true
+    set({ history: { views, at: i } })
+    if (v.activeId && v.activeId !== get().activeId) get().select(v.activeId, v.activeRow ?? undefined) // loads its transcript
+    set({ ...v, palette: null })
+    restoring = false
+  },
   fitPanes() {
     const s = get(), panel = !!(s.panel && s.activeId)
     let { sidebar, panel: p } = s.widths, over = (s.sidebarOpen ? sidebar : 0) + (panel ? p : 0) + minMain() - innerWidth
@@ -201,6 +221,18 @@ export const useStore = create<State>((set, get) => ({
   closePalette: () => set({ palette: null }),
   addProject() { if (get().transport?.kind === 'remote') set({ palette: 'folders' }); else api().projects.add().then((p) => p && get().newChat(p.id)) }
 }))
+
+// Each move to another place is a step in history (forward history drops, like a browser's). Only the project a new chat
+// drafts into changing (the project list arriving, or another project picked) updates the current step instead.
+useStore.subscribe((s, prev) => {
+  const v = viewOf(s)
+  if (restoring || sameView(viewOf(prev), v)) return
+  const { views, at } = s.history
+  if (sameView(views[at], v)) return
+  const draftOnly = sameView({ ...views[at], draftProjectId: v.draftProjectId }, v)
+  const next = draftOnly ? [...views.slice(0, at), v] : [...views.slice(0, at + 1), v].slice(-100)
+  useStore.setState({ history: { views: next, at: next.length - 1 } })
+})
 
 export const sessionTitle = (s: Session) => s.title ?? s.autoTitle ?? 'New chat'
 export const useActive = () => {

@@ -24,9 +24,12 @@ export interface TransportState {
   clockOffset: number // server clock minus ours
 }
 
+/** The application menu as the in-window menu bar draws it. */
+export interface MenuBarMenu { label: string; items: ({ separator: true } | { separator?: undefined; label: string; enabled: boolean; accelerator?: string })[] }
+
 export interface OrcApi {
   platform: string // window chrome differs per OS
-  menu: { popup(label: string, x: number, y: number): Promise<void>; shortcuts(map: Record<string, string | undefined>): Promise<void> } // popup: the application menu's submenus, for the in-window menu bar off macOS; shortcuts: the labels its items show (the window handles the keys)
+  menu: { items(): Promise<MenuBarMenu[]>; run(menu: string, index: number): Promise<void>; shortcuts(map: Record<string, string | undefined>): Promise<void> } // items/run: the application menu, for the in-window menu bar off macOS; shortcuts: the labels its items show (the window handles the keys)
   projects: {
     list(): Promise<Project[]>
     add(path?: string): Promise<Project | null> // no path: the desktop shows its folder dialog (local targets only)

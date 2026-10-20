@@ -51,7 +51,7 @@ function createWindow(): void {
 }
 
 /**
- * Off macOS the window has no native menu bar: the title bar draws these labels and pops their submenus (see TitleBar.tsx).
+ * Off macOS the window has no native menu bar: the title bar draws this menu itself (see MenuBar.tsx) and runs its items here.
  * The user picks the app's shortcuts (Settings → Keyboard shortcuts); the window handles those keys, so these items only show them.
  */
 let shortcuts: Record<string, string | undefined> = { newChat: 'Mod+N', newWindow: 'Mod+Shift+N', settings: 'Mod+,' }
@@ -73,9 +73,17 @@ function buildMenu(): void {
     { label: 'Help', role: 'help', submenu: [{ label: 'Claude Code docs', click: () => shell.openExternal('https://code.claude.com/docs') }] }
   ]))
 }
-ipcMain.handle('menu.popup', (e, label: string, x: number, y: number) => {
-  const window = BrowserWindow.fromWebContents(e.sender)
-  Menu.getApplicationMenu()?.items.find((i) => i.label === label)?.submenu?.popup({ window: window ?? undefined, x, y })
+// Shortcuts the roles bring along, which their items don't expose.
+const ROLE_KEYS: Partial<Record<string, string>> = { undo: 'CmdOrCtrl+Z', redo: 'CmdOrCtrl+Y', cut: 'CmdOrCtrl+X', copy: 'CmdOrCtrl+C', paste: 'CmdOrCtrl+V', selectall: 'CmdOrCtrl+A', reload: 'CmdOrCtrl+R', forcereload: 'CmdOrCtrl+Shift+R', toggledevtools: 'CmdOrCtrl+Shift+I', resetzoom: 'CmdOrCtrl+0', zoomin: 'CmdOrCtrl+Plus', zoomout: 'CmdOrCtrl+-', togglefullscreen: 'F11', close: 'CmdOrCtrl+W' }
+const topMenu = (label: string) => Menu.getApplicationMenu()?.items.find((i) => i.label === label)?.submenu
+ipcMain.handle('menu.items', () => (Menu.getApplicationMenu()?.items ?? []).filter((m) => m.submenu && m.visible).map((m) => ({
+  label: m.label,
+  items: m.submenu!.items.filter((i) => i.visible).map((i) => i.type === 'separator' ? { separator: true } : { label: i.label, enabled: i.enabled, accelerator: (i.accelerator ?? (i.role ? ROLE_KEYS[i.role.toLowerCase()] : undefined))?.toString() })
+})))
+ipcMain.handle('menu.run', (e, menu: string, index: number) => { // index among the visible items, as menu.items listed them
+  const window = BrowserWindow.fromWebContents(e.sender) ?? undefined
+  const item = topMenu(menu)?.items.filter((i) => i.visible)[index]
+  if (item?.enabled) item.click(undefined, window, e.sender) // roles (copy, zoom…) act on this window, like the native menu
 })
 ipcMain.handle('menu.shortcuts', (_e, map: typeof shortcuts) => { shortcuts = map; buildMenu() })
 ipcMain.handle('window.open', () => createWindow())

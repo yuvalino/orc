@@ -23,7 +23,7 @@ test('subagents: launch line, dropdown, panel lists and thread; model and effort
   await expect(page.getByText('Opus 5.5')).toBeVisible() // model from the agent's frames
   await expect(page.locator('.bg-bubble')).toHaveCount(2) // the main prompt, and the prompt the agent was given
   await shot(page, 'agents-thread')
-  await page.getByTitle('Back').click()
+  await page.getByTitle('Back', { exact: true }).click()
   await expect(page.getByText('Done · 2')).toBeVisible()
   const look = () => page.getByTitle('Subagents', { exact: true }).evaluate((e) => getComputedStyle(e).backgroundColor + getComputedStyle(e).color)
   const open = await look()
