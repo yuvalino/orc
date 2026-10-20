@@ -86,7 +86,7 @@ function TurnView({ turn, running }: { turn: Turn; running: boolean }) {
   return (
     <div className="flex flex-col gap-3.5">
       {turn.user && <div className="mr-2.5 max-w-[65%] self-end break-words rounded-3xl bg-bubble px-5 py-2.5 text-white whitespace-pre-wrap">{turn.user.text}</div>}
-      {turn.work.length > 0 && <WorkSection items={turn.work} running={running && turn.final.length === 0} durationMs={turn.end?.durationMs} />}
+      {(turn.work.length > 0 || (running && turn.final.length === 0)) && <WorkSection items={turn.work} running={running && turn.final.length === 0} durationMs={turn.end?.durationMs} />} {/* "Working…" from the moment the prompt is sent */}
       {turn.final.map((it) => it.kind === 'note' ? <WorkItem key={it.id} item={it} /> : it.kind === 'text' && (
         <div key={it.id} className="group">
           <div className={it.streaming ? 'caret' : ''}><Markdown text={it.text} /></div>
@@ -94,7 +94,6 @@ function TurnView({ turn, running }: { turn: Turn; running: boolean }) {
         </div>
       ))}
       {turn.end?.stopped && <div className="text-[12.5px] text-fg-3">Stopped</div>}
-      {running && turn.work.length === 0 && turn.final.length === 0 && <Loader2 size={16} className="animate-spin text-fg-3" />}
     </div>
   )
 }
