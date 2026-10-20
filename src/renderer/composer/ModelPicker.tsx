@@ -35,7 +35,7 @@ export function ModelPicker({ session }: { session: Session | null }) {
   const idx = Math.max(0, levels.indexOf(shown ?? 'medium')), pct = levels.length > 1 ? (idx / (levels.length - 1)) * 100 : 0
   const set = (patch: { model?: string | null; effort?: string | null }) => (session ? update(session.id, patch) : setDefaults(patch))
   const pick = (m: typeof current) => set({ model: m.value === 'default' ? null : m.value, ...(sel.effort && !m.effortLevels?.includes(sel.effort) ? { effort: null } : {}) }) // an effort the new model lacks resets
-  const pop = 'absolute bottom-full right-0 z-50 mb-2 w-[250px] rounded-xl border border-line-strong bg-bg-composer shadow-xl'
+  const pop = 'absolute bottom-full right-0 z-50 mb-2 w-[250px] select-none whitespace-normal rounded-xl border border-line-strong bg-bg-composer shadow-xl' // wraps long descriptions (the composer row it sits in doesn't wrap)
 
   return (
     <div ref={ref} className="relative">

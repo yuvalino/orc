@@ -55,6 +55,9 @@ test('subagents: launch line, dropdown, panel lists and thread; model and effort
   await expect(page.getByText('Max', { exact: true }).first()).toBeVisible()
   await page.getByRole('button', { name: 'Opus 4.6', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Select model' })).toBeVisible()
+  const list = page.locator('div', { has: page.getByText('Select model', { exact: true }) }).filter({ has: page.getByText('Sonnet 4.6') }).last()
+  expect(await list.evaluate((e) => [getComputedStyle(e).whiteSpace, getComputedStyle(e).userSelect].join())).toBe('normal,none') // long descriptions wrap; nothing here selects
+  expect(await list.evaluate((e) => [...e.querySelectorAll('button')].every((b) => b.scrollWidth <= b.clientWidth))).toBe(true)
   await shot(page, 'agents-model-list')
   await page.getByText('Sonnet 4.6').click()
   await expect(page.getByRole('button', { name: 'Sonnet 4.6', exact: true })).toBeVisible() // back on the effort view, model link updated

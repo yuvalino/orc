@@ -26,6 +26,10 @@ test('settings: cog menu, tabs and search, CLAUDE.md editor, recorded shortcuts'
   await page.getByRole('button', { name: /^Settings/ }).last().click()
   await expect(page.getByRole('heading', { name: 'Personalization' })).toBeVisible()
   await expect(page.getByLabel('Search settings')).toBeFocused()
+  const selects = (l: ReturnType<typeof page.getByText>) => l.evaluate((e) => getComputedStyle(e).userSelect)
+  expect(await selects(page.getByRole('heading', { name: 'Settings' }))).toBe('none') // titles aren't text to select…
+  expect(await selects(page.getByRole('heading', { name: 'Personalization' }))).toBe('none')
+  expect(await selects(page.getByLabel('Search settings'))).not.toBe('none') // …text boxes are
   await expect(page.getByRole('button', { name: 'General' })).toBeDisabled()
   const nav = page.locator('nav').filter({ hasText: 'Settings' }), bg = (l: typeof nav) => l.evaluate((e) => getComputedStyle(e).backgroundColor)
   expect(await bg(page.getByLabel('Search settings').locator('xpath=..'))).not.toBe(await bg(nav)) // the search box stands out from its pane

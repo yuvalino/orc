@@ -19,7 +19,7 @@ export function Sidebar() {
   const rows = [!collapsed.pinned && has(pinned) && 'pinned', ...projects.map((p) => !collapsed.projects && !collapsed[`project:${p.id}`] && has(projectChats(p).slice(0, 5)) && `project:${p.id}`), !collapsed.recents && has(recent.slice(0, 20)) && 'recents'].filter(Boolean) as string[]
   const lit = activeRow && rows.includes(activeRow) ? activeRow : rows[0]
   return (
-    <aside className="relative flex w-full flex-col bg-bg-sidebar">
+    <aside className="relative flex w-full select-none flex-col bg-bg-sidebar"> {/* all chrome: nothing here is text to select (the rename box opts back in) */}
       <Resizer edge="right" width={widths.sidebar} {...PANE.sidebar} onResize={(w) => setWidth('sidebar', w)} />
       <div className="flex items-center justify-between pb-1.5 pl-4 pr-3 pt-2">
         <span className="flex items-center gap-2 text-[16px] font-semibold text-fg-bright"><img src={logo} alt="" className="size-[32px]" draggable={false} />orc{transport?.kind === 'remote' && <span className="rounded-md bg-accent/20 px-1.5 py-0.5 text-[11px] font-medium text-[#93b4ff]">ssh: {transport.host}</span>}</span>
@@ -135,7 +135,7 @@ function ChatRow({ s, row, lit, nested }: { s: Session; row: string; lit?: strin
       {renaming
         ? <input autoFocus defaultValue={sessionTitle(s)} aria-label="Chat title" onClick={(e) => e.stopPropagation()} onBlur={(e) => commit(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') commit(e.currentTarget.value); if (e.key === 'Escape') setRenaming(false) }}
-            className="min-w-0 flex-1 rounded bg-bg px-1 text-[14px] text-fg-bright outline-none" />
+            className="min-w-0 flex-1 select-text rounded bg-bg px-1 text-[14px] text-fg-bright outline-none" />
         : <span className="truncate">{sessionTitle(s)}</span>}
       <Trailing indicator={<Indicator ids={[s.id]} />}>
         <button title={s.isPinned ? 'Unpin' : 'Pin'} onClick={(e) => { e.stopPropagation(); update(s.id, { isPinned: !s.isPinned }) }} className="rounded p-0.5 text-fg-3 hover:text-fg"><PinIcon filled={s.isPinned} /></button>

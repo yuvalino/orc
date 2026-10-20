@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 
 export interface MenuItem { label: ReactNode; icon?: ReactNode; detail?: string; hint?: string; onSelect?: () => void; active?: boolean; danger?: boolean; tone?: string } // hint: shown at the right (a shortcut); detail: a line below; tone: a text color class for the label, e.g. 'text-bypass' (the detail stays gray)
 
-const panel = 'z-50 min-w-52 rounded-lg border border-line-strong bg-bg-composer p-1 shadow-xl'
+const panel = 'z-50 min-w-52 select-none rounded-lg border border-line-strong bg-bg-composer p-1 shadow-xl'
 
 /** A menu's rows; 'separator' splits them into sections. */
 export type MenuEntry = MenuItem | 'separator'

@@ -21,13 +21,13 @@ export function Settings() {
   const q = query.trim().toLowerCase()
   const tabs = TABS.filter((t) => !q || `${t.label} ${t.keywords}`.toLowerCase().includes(q))
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 flex-1 select-none"> {/* all chrome; its text boxes opt back in */}
       <nav style={{ width: widths.settings }} className="relative flex shrink-0 flex-col bg-bg-sidebar px-3 pt-5">
         <Resizer edge="right" width={widths.settings} {...PANE.settings} onResize={(w) => setWidth('settings', w)} />
         <h1 className="px-2 text-[19px] font-semibold text-fg-bright">Settings</h1>
         <label className={`${field} mt-4 py-[7px]`}>
           <Search size={16} className="shrink-0" />
-          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" aria-label="Search settings" className="min-w-0 flex-1 bg-transparent text-[14px] text-fg-bright outline-none placeholder:text-fg-2" />
+          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" aria-label="Search settings" className="min-w-0 flex-1 select-text bg-transparent text-[14px] text-fg-bright outline-none placeholder:text-fg-2" />
         </label>
         <div className="mt-4 flex flex-col gap-0.5">
           {tabs.map((t) => (
@@ -96,7 +96,7 @@ function InstructionsEditor() {
         <h2 className="text-[28px] font-semibold text-fg-bright">{INSTRUCTIONS.title}</h2>
         <p className="mt-1 text-[13px] text-fg-2">{INSTRUCTIONS.detail}</p>
         <textarea ref={ref} value={text} disabled={saved === null} onChange={(e) => setText(e.target.value)} placeholder="Add your custom instructions..." aria-label={INSTRUCTIONS.title}
-          className="mt-6 h-[260px] w-full resize-y rounded-xl border border-line-strong bg-[#2a2a2a] px-3 py-2.5 text-[14px] leading-relaxed text-fg-bright outline-none placeholder:text-fg-2 focus:border-accent" />
+          className="mt-6 h-[260px] w-full select-text resize-y rounded-xl border border-line-strong bg-[#2a2a2a] px-3 py-2.5 text-[14px] leading-relaxed text-fg-bright outline-none placeholder:text-fg-2 focus:border-accent" />
       </div>
     </div>
   )
@@ -118,7 +118,7 @@ function KeyboardShortcuts() {
     <Page title="Keyboard shortcuts">
       <label className={`${field} mt-8 py-2`}>
         <Search size={16} className="shrink-0" />
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search shortcuts" aria-label="Search shortcuts" className="min-w-0 flex-1 bg-transparent text-[14px] text-fg-bright outline-none placeholder:text-fg-2" />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search shortcuts" aria-label="Search shortcuts" className="min-w-0 flex-1 select-text bg-transparent text-[14px] text-fg-bright outline-none placeholder:text-fg-2" />
       </label>
       <div className={`${card} mt-6 px-4`}>
         {rows.map((s) => {
