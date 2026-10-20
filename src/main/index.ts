@@ -76,7 +76,10 @@ function openAbout(): void {
  */
 let shortcuts: Record<string, string | undefined> = { newChat: 'Mod+N', newWindow: 'Mod+Shift+N', settings: 'Mod+,' }
 const shown = (k: string) => (shortcuts[k] ? { accelerator: shortcuts[k]!.replace('Mod', 'CmdOrCtrl'), registerAccelerator: false } : {})
-const toFocused = (channel: 'menu:new-chat' | 'menu:settings' | 'menu:open-folder') => () => BrowserWindow.getFocusedWindow()?.webContents.send(channel) // the focused window only
+// To the window the menu was used in: the one Electron passes (the in-window menu bar names it), else the focused one.
+// Focus alone isn't enough: after a dialog closes, Windows doesn't always hand it back.
+const toFocused = (channel: 'menu:new-chat' | 'menu:settings' | 'menu:open-folder') => (_item: Electron.MenuItem, win?: Electron.BaseWindow) =>
+  ((win instanceof BrowserWindow ? win : null) ?? BrowserWindow.getFocusedWindow())?.webContents.send(channel)
 function buildMenu(): void {
   const mac = process.platform === 'darwin'
   Menu.setApplicationMenu(Menu.buildFromTemplate([

@@ -47,7 +47,9 @@ test('menu bar switches menus on hover; back and forward step through chats and 
   await bar('View').hover() // closed: hovering alone opens nothing
   await expect(page.getByRole('menu')).toHaveCount(0)
 
-  // An item runs in the main process: Edit → Settings… opens settings.
+  // An item runs in the main process: Edit → Settings… opens settings, in this window even when it hasn't got the focus
+  // (Windows doesn't always hand it back after a dialog like About closes).
+  await c.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.blur()))
   await bar('Edit').click()
   await menu('Edit').getByRole('menuitem', { name: /Settings…/ }).click()
   await expect(page.getByRole('heading', { name: 'Personalization' })).toBeVisible()

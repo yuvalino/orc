@@ -18,9 +18,11 @@ test('empty shell matches the Codex layout', async () => {
   await expect(page.getByTitle('Subagents', { exact: true })).toHaveCount(0)
   const greetingAt = () => page.getByTestId('empty-chat').locator('.logo-glow').first().evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y)] })
   const before = await greetingAt()
+  const shown = await page.getByTestId('empty-chat').locator('img').elementHandle() // the logo on screen now…
   await send(page, 'hello without a project')
   await expect(page.locator('.fade-out[data-testid=empty-chat]')).toHaveCount(1) // fading out over the first turn…
   expect(await greetingAt()).toEqual(before) // …right where it was, though the header and project bar came and went
+  expect(await shown!.evaluate((e) => e.isConnected && !!e.closest('.fade-out'))).toBe(true) // …and the very same element fading: a new one would blink
   await expect(page.getByTitle('Subagents', { exact: true })).toBeVisible() // the open chat has one
   const shade = page.getByTestId('header-shade') // under its line, the conversation fades into the background color
   expect(await shade.evaluate((e) => getComputedStyle(e).backgroundImage)).toMatch(/^linear-gradient\(rgb\(30, 30, 30\), rgba\(0, 0, 0, 0\)\)$/)

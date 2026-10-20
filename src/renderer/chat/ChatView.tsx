@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Bot, Check, ChevronRight, Copy, FileText, Folder, Globe, Hand, ListChecks, Loader2, Pencil, Search, Terminal, Wrench, X } from 'lucide-react'
 import type { Item } from '@shared/types'
 import { AskCard } from './asks'
@@ -39,6 +39,10 @@ export const greetingFor = (project: { name: string | null; path: string } | nul
 export function ChatView() {
   const { session, project } = useActive()
   const items = useStore((s) => (session ? s.transcripts[session.id] : undefined))
+  // The transcript renders at low priority: opening a long chat starts the empty screen's fade (and paints the switch) first,
+  // then fills in its messages without holding up those frames. Tagged by chat so another chat's messages never show here.
+  const deferred = useDeferredValue(useMemo(() => ({ id: session?.id, items }), [session?.id, items]))
+  const shownItems = deferred.id === session?.id ? deferred.items : undefined
   const status = useStore((s) => (session ? s.status[session.id] : undefined))
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -49,20 +53,28 @@ export function ChatView() {
   if (!session && (greeting.current.stale || greeting.current.project !== (project?.id ?? ''))) greeting.current = { project: project?.id ?? '', text: greetingFor(project), path: '', stale: false }
   if (!session) greeting.current.path = project ? project.path.replace(/^\/Users\/[^/]+/, '~') : '~'
   if (session) greeting.current.stale = true
-  // Where it sat, too: the chat's header and the prompt's project bar come and go as it leaves, so it fades out over that same box.
-  const root = useRef<HTMLDivElement>(null), empty = useRef<HTMLDivElement>(null), box = useRef({ top: 0, height: 0 })
+  // The empty screen is one element from start to fade: drawn over a slot that holds its place in a new chat, and kept, in that
+  // same box, while it fades out (the chat's header and the prompt's project bar come and go meanwhile). A new element would
+  // blink: a fresh logo image paints blank for a frame and its float animation restarts.
+  const root = useRef<HTMLDivElement>(null), slot = useRef<HTMLDivElement>(null)
+  const [box, setBox] = useState<{ top: number; height: number } | null>(null)
   useLayoutEffect(() => {
-    if (session || !empty.current || !root.current) return
-    const a = empty.current.getBoundingClientRect(), r = root.current.getBoundingClientRect()
-    box.current = { top: a.top - r.top, height: a.height }
-  })
+    const el = slot.current
+    if (session || !el || !root.current) return
+    const measure = () => { const a = el.getBoundingClientRect(), r = root.current!.getBoundingClientRect(); setBox((b) => (b?.top === a.top - r.top && b.height === a.height ? b : { top: a.top - r.top, height: a.height })) }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [!!session])
   useEffect(() => {
     if (session && !hadSession.current) { setLeaving(true); const t = setTimeout(() => setLeaving(false), 300); hadSession.current = true; return () => clearTimeout(t) }
     hadSession.current = !!session
   }, [session?.id])
+  const fading = !!session && (leaving || !hadSession.current) // from the very render the chat appears in, not an effect later
 
   useEffect(() => { stick.current = true }, [session?.id]) // a freshly opened chat starts at its latest message
-  useEffect(() => { if (stick.current) ref.current?.scrollTo({ top: ref.current.scrollHeight }) }, [items])
+  useEffect(() => { if (stick.current) ref.current?.scrollTo({ top: ref.current.scrollHeight }) }, [shownItems])
   const onScroll = () => { const el = ref.current!; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60 }
 
   const emptyScreen = (
@@ -78,14 +90,15 @@ export function ChatView() {
       <div className="relative flex min-h-0 flex-1 flex-col">
         {session && (
           <div key={session.id} ref={ref} onScroll={onScroll} style={{ paddingInline: 'clamp(16px, 8%, 100px)' }} className="fade-in min-h-0 flex-1 overflow-y-auto pb-3 pt-5">
-            <Turns items={items ?? []} running={!!status && status.state !== 'idle' && status.state !== 'closed'} />
+            <Turns items={shownItems ?? []} running={!!status && status.state !== 'idle' && status.state !== 'closed'} />
           </div>
         )}
         {session && <div data-testid="header-shade" aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-6" style={{ background: 'linear-gradient(var(--color-bg), transparent)' }} />} {/* the header's shadow, below its line: the conversation fades out under it */}
-        {!session && <div ref={empty} data-testid="empty-chat" className="flex flex-1 select-none flex-col items-center justify-center gap-2 text-fg-3">{emptyScreen}</div>}
+        {!session && <div ref={slot} className="flex-1" />}
       </div>
-      {session && leaving && (
-        <div data-testid="empty-chat" style={box.current} className="fade-out pointer-events-none absolute inset-x-0 z-10 flex select-none flex-col items-center justify-center gap-2 bg-bg text-fg-3">{emptyScreen}</div>
+      {(!session || fading) && (
+        <div data-testid="empty-chat" style={box ?? { top: 0, bottom: 0 }}
+          className={`absolute inset-x-0 flex select-none flex-col items-center justify-center gap-2 text-fg-3 ${fading ? 'fade-out pointer-events-none z-10 bg-bg' : ''}`}>{emptyScreen}</div>
       )}
     </div>
   )

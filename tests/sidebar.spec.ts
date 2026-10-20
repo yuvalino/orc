@@ -61,6 +61,12 @@ test('sidebar: arrow cursor, folding sections and projects, new-chat buttons, fo
   expect(await arrow.evaluate((e) => getComputedStyle(e).opacity)).toBe('1')
   await recents.click()
 
+  // From a new chat to an existing one, the empty screen fades out as the same element, logo and all (a new one would blink).
+  await page.getByRole('button', { name: 'New chat' }).first().click()
+  const logo = await page.getByTestId('empty-chat').locator('img').elementHandle()
+  await page.getByText('Beta chat').first().click()
+  expect(await logo!.evaluate((e) => e.isConnected && !!e.closest('.fade-out'))).toBe(true)
+
   // Recents and each project have a new-chat button; the project's starts the chat there.
   await recents.hover()
   await recents.getByTitle('New chat').click()
