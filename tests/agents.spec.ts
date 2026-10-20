@@ -49,13 +49,23 @@ test('subagents: launch line, dropdown, panel lists and thread; model and effort
 
   // Model picker: effort popover first, model list behind the model link.
   await expect(page.getByRole('button', { name: /^Opus 4.6 ?High/ })).toBeVisible() // no effort chosen: the level the CLI reports, never "Default"
+  const closedWidth = (await page.getByRole('button', { name: /^Opus 4.6/ }).boundingBox())!.width
   await page.getByRole('button', { name: /^Opus 4.6/ }).click() // no model chosen: the one the default stands for
   await expect(page.getByText('Select effort')).toBeVisible()
   const picker = page.locator('.from-top') // one panel for both views: fades in from above
+  const pickerButton = page.getByRole('button', { name: /^Select effort/ }), buttonLook = () => pickerButton.evaluate((b) => [getComputedStyle(b).backgroundColor, getComputedStyle(b).color, parseFloat(getComputedStyle(b).borderRadius) > 100])
+  await page.mouse.move(5, 5)
+  const openLook = await buttonLook()
+  expect(openLook).toEqual(['rgb(58, 58, 58)', openLook[1], true]) // open: round, the same light gray as its hover…
+  await pickerButton.hover()
+  expect(await buttonLook()).toEqual(openLook) // …that the mouse doesn't change, text included
+  const [pb, bb] = [(await picker.boundingBox())!, (await pickerButton.boundingBox())!]
+  expect(Math.abs(pb.x + pb.width / 2 - (bb.x + bb.width / 2))).toBeLessThan(1) // the panel is centered over the button…
+  expect(bb.width).toBe(closedWidth) // …which keeps its width as its label changes, so the panel stays put
   expect(await picker.evaluate((e) => Number(getComputedStyle(e).opacity))).toBeLessThan(1)
   await expect.poll(() => picker.evaluate((e) => getComputedStyle(e).opacity)).toBe('1')
   await page.locator('input.effort').fill('3')
-  await expect(page.getByText('Max', { exact: true }).first()).toBeVisible()
+  await expect(page.locator('.from-top').getByText('Max', { exact: true })).toBeVisible()
   await expect(picker.getByText('Low', { exact: true })).toHaveCount(0) // no level names under the slider…
   await expect(picker.locator('[data-effort-dot]')).toHaveCount(3) // …but a dot at each other level it can move to
   await page.locator('input.effort').fill('1')
@@ -63,7 +73,7 @@ test('subagents: launch line, dropdown, panel lists and thread; model and effort
   expect(dots).toEqual(['0%', '66.6667%', '100%']) // on both sides of the thumb, none under it
   await page.locator('input.effort').fill('3')
   const panel = await picker.elementHandle()
-  expect(await picker.evaluate((e) => getComputedStyle(e).backgroundColor)).toBe('rgb(43, 43, 43)') // its own color, apart from the prompt's
+  expect(await picker.evaluate((e) => getComputedStyle(e).backgroundColor)).toBe('rgb(35, 35, 35)') // its own color, darker than the prompt
   await expect(page.getByTitle('Select model')).toContainText('MaxOpus 4.6') // the level and the model are one button…
   const modelButton = page.getByTitle('Select model'), modelLook = () => modelButton.evaluate((b) => [getComputedStyle(b).backgroundColor, getComputedStyle(b.lastElementChild!).color])
   const [, nameColor] = await modelLook()
@@ -81,19 +91,21 @@ test('subagents: launch line, dropdown, panel lists and thread; model and effort
   await shot(page, 'agents-model-list')
   await page.getByText('Sonnet 4.6').click()
   await expect(page.getByTitle('Select model')).toContainText('Sonnet 4.6') // back on the effort view, model updated
-  await expect(page.getByText('Medium', { exact: true }).first()).toBeVisible() // Sonnet has no 'max': effort reset, showing Sonnet's own default
+  await expect(page.locator('.from-top').getByText('Medium', { exact: true })).toBeVisible() // Sonnet has no 'max': effort reset, showing Sonnet's own default
   await expect(page.getByText('Default', { exact: true })).toHaveCount(0)
   await shot(page, 'agents-effort')
   await page.mouse.click(700, 300) // outside the popover: it fades out, then goes
   await expect(page.locator('.from-top.menu-out')).toHaveCount(1)
   await expect(page.locator('.from-top')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^Sonnet 4.6/ })).toBeVisible()
+  await page.getByRole('button', { name: /^Sonnet 4.6/ }).hover() // closed: a light gray on hover
+  await expect.poll(() => page.getByRole('button', { name: /^Sonnet 4.6/ }).evaluate((b) => getComputedStyle(b).backgroundColor)).toBe('rgb(58, 58, 58)')
 
   // Without a chat the picker edits the defaults for the next one.
   await page.getByRole('button', { name: 'New chat' }).click()
   await page.getByRole('button', { name: /^Opus 4.6/ }).click() // no model chosen: the one the default stands for
   await page.locator('input.effort').fill('2')
-  await expect(page.getByText('High', { exact: true }).first()).toBeVisible()
+  await expect(page.locator('.from-top').getByText('High', { exact: true })).toBeVisible()
   await page.mouse.click(700, 300)
   await expect(page.getByRole('button', { name: /^Opus 4.6 ?High/ })).toBeVisible()
   await c.close()

@@ -51,12 +51,20 @@ export function ModelPicker({ session }: { session: Session | null }) {
   const idx = Math.max(0, levels.indexOf(shown ?? 'medium')), pct = levels.length > 1 ? (idx / (levels.length - 1)) * 100 : 0
   const set = (patch: { model?: string | null; effort?: string | null }) => (session ? update(session.id, patch) : setDefaults(patch))
   const pick = (m: typeof current) => set({ model: m.value === 'default' ? null : m.value, ...(sel.effort && !m.effortLevels?.includes(sel.effort) ? { effort: null } : {}) }) // an effort the new model lacks resets
-  const pop = 'absolute bottom-full right-0 z-50 mb-2 w-[250px] select-none whitespace-normal rounded-xl border border-line-strong bg-bg-picker shadow-xl' // wraps long descriptions (the composer row it sits in doesn't wrap)
+  const pop = 'absolute bottom-full left-1/2 z-50 -ml-[125px] mb-2 w-[250px] select-none whitespace-normal rounded-xl border border-line-strong bg-bg-picker shadow-xl' // centered over the button (by margin: its animation owns transform); wraps long descriptions (the composer row it sits in doesn't wrap)
 
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => (view ? close() : open('effort'))} className={`flex items-center gap-[5px] rounded-md px-2.5 py-[5px] text-[13px] text-fg-2 hover:bg-bg-hover hover:text-fg ${view ? 'bg-bg-active' : ''}`}>
-        {view ? (view === 'effort' ? 'Select effort' : 'Select model') : <><span className="text-fg-bright">{name(current.displayName)}</span>{shown && <span>{label(shown)}</span>}</>}<ChevronDown size={10} />
+      <button onClick={() => (view ? close() : open('effort'))} className={`flex items-center gap-[5px] rounded-full px-2.5 py-[5px] text-[13px] text-fg-2 ${view ? 'bg-[#3a3a3a]' : 'hover:bg-[#3a3a3a] hover:text-fg'}`}> {/* light gray on hover, and kept while open, steady under the mouse */}
+        {/* every label it can show, stacked in one cell: the button keeps the widest one's width, so the panel centered over it never moves */}
+        <span className="grid justify-items-center">
+          {[null, 'effort', 'models'].map((v) => (
+            <span key={v ?? 'closed'} aria-hidden={v !== view} className={`col-start-1 row-start-1 flex items-center gap-[5px] ${v === view ? '' : 'invisible'}`}>
+              {v === null ? <><span className="text-fg-bright">{name(current.displayName)}</span>{shown && <span>{label(shown)}</span>}</> : v === 'effort' ? 'Select effort' : 'Select model'}
+            </span>
+          ))}
+        </span>
+        <ChevronDown size={10} />
       </button>
       {panel && (
         <div style={{ height }} onAnimationEnd={(e) => { if (e.target === e.currentTarget && !view) setClosing(false) }}

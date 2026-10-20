@@ -5,7 +5,7 @@
   --color-bg: #1e1e1e;
   --color-bg-sidebar: #252526;
   --color-bg-composer: #303030;
-  --color-bg-picker: #2b2b2b; /* the model/effort picker: between the conversation and the prompt, apart from the project bar's #272727 */
+  --color-bg-picker: #232323; /* the model/effort picker: just above the conversation, apart from the project bar's #272727 */
   --color-bg-hover: #2a2d2e;
   --color-bg-active: rgba(255, 255, 255, 0.08);
   --color-bubble: #1a43a3; /* well darker than the accent */
