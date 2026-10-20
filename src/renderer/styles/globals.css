@@ -5,6 +5,7 @@
   --color-bg: #1e1e1e;
   --color-bg-sidebar: #252526;
   --color-bg-composer: #303030;
+  --color-bg-picker: #2b2b2b; /* the model/effort picker: between the conversation and the prompt, apart from the project bar's #272727 */
   --color-bg-hover: #2a2d2e;
   --color-bg-active: rgba(255, 255, 255, 0.08);
   --color-bubble: #1a43a3; /* well darker than the accent */
@@ -50,13 +51,16 @@ input.effort::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; heig
 @keyframes fade-out { to { opacity: 0; } }
 .fade-in { animation: fade-in 0.35s ease-out; }
 .fade-out { animation: fade-out 0.28s ease-in forwards; }
-/* Dropdowns that ask for it (Menu `animate`): fade and slide in from the right or the bottom, and back out. */
+/* Dropdowns that ask for it (Menu `animate`, the model picker): fade and slide in from a side, and back out. */
 .from-right { --menu-dx: 12px; --menu-dy: 0px; }
 .from-bottom { --menu-dx: 0px; --menu-dy: 8px; }
+.from-top { --menu-dx: 0px; --menu-dy: -8px; }
 @keyframes menu-in { from { opacity: 0; transform: translate(var(--menu-dx), var(--menu-dy)); } }
 @keyframes menu-out { to { opacity: 0; transform: translate(var(--menu-dx), var(--menu-dy)); } }
 .menu-in { animation: menu-in 0.16s ease-out; }
 .menu-out { animation: menu-out 0.14s ease-in forwards; }
+/* A menu swapping its content in place (the model picker): the new content fades in as the panel resizes. */
+.swap-in { animation: fade-in 0.18s ease-out; }
 /* The empty-chat logo: a mild blue glow behind it, drifting up and down a few pixels. */
 .logo-glow { position: relative; display: flex; }
 .logo-glow::before { content: ""; position: absolute; inset: -40%; border-radius: 50%; background: radial-gradient(circle, rgba(56, 189, 248, 0.16) 0%, rgba(56, 189, 248, 0.05) 45%, transparent 70%); pointer-events: none; }

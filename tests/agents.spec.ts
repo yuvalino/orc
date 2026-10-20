@@ -51,20 +51,42 @@ test('subagents: launch line, dropdown, panel lists and thread; model and effort
   await expect(page.getByRole('button', { name: /^Opus 4.6 ?High/ })).toBeVisible() // no effort chosen: the level the CLI reports, never "Default"
   await page.getByRole('button', { name: /^Opus 4.6/ }).click() // no model chosen: the one the default stands for
   await expect(page.getByText('Select effort')).toBeVisible()
+  const picker = page.locator('.from-top') // one panel for both views: fades in from above
+  expect(await picker.evaluate((e) => Number(getComputedStyle(e).opacity))).toBeLessThan(1)
+  await expect.poll(() => picker.evaluate((e) => getComputedStyle(e).opacity)).toBe('1')
   await page.locator('input.effort').fill('3')
   await expect(page.getByText('Max', { exact: true }).first()).toBeVisible()
-  await page.getByRole('button', { name: 'Opus 4.6', exact: true }).click()
+  await expect(picker.getByText('Low', { exact: true })).toHaveCount(0) // no level names under the slider…
+  await expect(picker.locator('[data-effort-dot]')).toHaveCount(3) // …but a dot at each other level it can move to
+  await page.locator('input.effort').fill('1')
+  const dots = await picker.locator('[data-effort-dot]').evaluateAll((d) => d.map((e) => (e as HTMLElement).style.left))
+  expect(dots).toEqual(['0%', '66.6667%', '100%']) // on both sides of the thumb, none under it
+  await page.locator('input.effort').fill('3')
+  const panel = await picker.elementHandle()
+  expect(await picker.evaluate((e) => getComputedStyle(e).backgroundColor)).toBe('rgb(43, 43, 43)') // its own color, apart from the prompt's
+  await expect(page.getByTitle('Select model')).toContainText('MaxOpus 4.6') // the level and the model are one button…
+  const modelButton = page.getByTitle('Select model'), modelLook = () => modelButton.evaluate((b) => [getComputedStyle(b).backgroundColor, getComputedStyle(b.lastElementChild!).color])
+  const [, nameColor] = await modelLook()
+  await modelButton.hover()
+  await expect.poll(async () => (await modelLook())[0]).toBe('rgb(58, 58, 58)') // hovered: a lighter gray behind it…
+  expect((await modelLook())[1]).toBe(nameColor) // …the model name keeps its color
+  await page.getByTitle('Select model').getByText('Max', { exact: true }).click() // …so the level opens the list too
   await expect(page.getByRole('button', { name: 'Select model' })).toBeVisible()
+  expect(await panel!.evaluate((e) => e.isConnected && e.classList.contains('menu-in'))).toBe(true) // the same panel, not a new popup…
+  expect(await picker.evaluate((e) => getComputedStyle(e).transitionProperty)).toBe('height') // …resizing to fit the list, animated
+  await expect.poll(() => picker.evaluate((e) => e.style.height === `${(e.firstElementChild as HTMLElement).offsetHeight}px`)).toBe(true)
   const list = page.locator('div', { has: page.getByText('Select model', { exact: true }) }).filter({ has: page.getByText('Sonnet 4.6') }).last()
   expect(await list.evaluate((e) => [getComputedStyle(e).whiteSpace, getComputedStyle(e).userSelect].join())).toBe('normal,none') // long descriptions wrap; nothing here selects
   expect(await list.evaluate((e) => [...e.querySelectorAll('button')].every((b) => b.scrollWidth <= b.clientWidth))).toBe(true)
   await shot(page, 'agents-model-list')
   await page.getByText('Sonnet 4.6').click()
-  await expect(page.getByRole('button', { name: 'Sonnet 4.6', exact: true })).toBeVisible() // back on the effort view, model link updated
+  await expect(page.getByTitle('Select model')).toContainText('Sonnet 4.6') // back on the effort view, model updated
   await expect(page.getByText('Medium', { exact: true }).first()).toBeVisible() // Sonnet has no 'max': effort reset, showing Sonnet's own default
   await expect(page.getByText('Default', { exact: true })).toHaveCount(0)
   await shot(page, 'agents-effort')
-  await page.mouse.click(700, 300) // outside the popover
+  await page.mouse.click(700, 300) // outside the popover: it fades out, then goes
+  await expect(page.locator('.from-top.menu-out')).toHaveCount(1)
+  await expect(page.locator('.from-top')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^Sonnet 4.6/ })).toBeVisible()
 
   // Without a chat the picker edits the defaults for the next one.

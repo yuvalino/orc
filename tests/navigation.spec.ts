@@ -28,6 +28,7 @@ test('menu bar switches menus on hover; back and forward step through chats and 
 
   // Help → About Orc: its own floating window, frameless and dark, centered content with the version and links.
   const [win] = await Promise.all([c.app.waitForEvent('window'), menu('Help').getByRole('menuitem', { name: 'About Orc' }).click()])
+  await win.waitForLoadState('domcontentloaded') // a new window: its page may still be loading
   await expect(win.getByText('Powered by Electron.')).toBeVisible()
   await expect(win.locator('body')).toContainText(/Version \d+\.\d+\.\d+/)
   await expect(win.getByText('Created by Yuvalino')).toBeVisible()
