@@ -5,6 +5,7 @@ import { AskCard } from './asks'
 import { Markdown } from './Markdown'
 import { LaunchRow, SubagentsButton, isLaunch, type Tool } from './agents'
 import { sessionTitle, useActive, useStore } from '../stores/store'
+import logo from '../assets/logo.png'
 
 const HIDDEN_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
@@ -53,7 +54,7 @@ export function ChatView() {
       </div>
       {!session ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-1.5 text-fg-3">
-          <div className="text-2xl opacity-15">◇</div>
+          <div className="logo-glow mb-3"><img src={logo} alt="" className="logo-float size-[104px]" draggable={false} /></div>
           <div className="text-[14px] font-medium text-fg">Start a conversation</div>
           <div className="text-[13px]">Working in <code className="rounded bg-bg-active px-1.5 py-0.5 font-mono text-[12px]">{project ? project.path.replace(/^\/Users\/[^/]+/, '~') : '~'}</code></div>
         </div>

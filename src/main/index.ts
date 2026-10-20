@@ -21,6 +21,7 @@ let secondInstances = 0
 app.on('second-instance', () => { secondInstances++; const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus() } })
 Object.assign(globalThis, { orcSecondInstances: () => secondInstances, orcNewWindow: () => createWindow() })
 const remote = remoteHost && app.hasSingleInstanceLock() ? new Remote(remoteHost, push) : null // a duplicate instance is quitting: no ssh, no askpass dir
+const icon = join(__dirname, '../../build/icon.png') // in development; packaged builds carry the icons electron-builder derives from this file
 
 /** Windows take the lowest free slot so each remembers its own bounds (the first window is slot 0 again after it was closed). */
 const slots = new Set<number>()
@@ -34,6 +35,7 @@ function createWindow(): void {
     minHeight: 560,
     title: remoteHost ? `orc — ${remoteHost}` : 'orc',
     backgroundColor: '#181818',
+    ...(process.platform !== 'darwin' && existsSync(icon) ? { icon } : {}), // the window's own icon on Windows and Linux in development
     ...(process.platform === 'win32' ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#181818', symbolColor: '#a0a0a0', height: 46 } } : { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 14, y: 14 } }),
     show: false,
     webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: false }
@@ -63,6 +65,7 @@ function buildMenu(): void {
 }
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && !app.isPackaged && existsSync(icon)) app.dock?.setIcon(icon)
   buildMenu()
   registerIpc(remote ?? undefined)
   if (remote) remote.connect(); else boot()
