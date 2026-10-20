@@ -21,13 +21,17 @@ export function Sidebar() {
   return (
     <aside className="relative flex w-full select-none flex-col bg-bg-sidebar"> {/* all chrome: nothing here is text to select (the rename box opts back in) */}
       <Resizer edge="right" width={widths.sidebar} {...PANE.sidebar} onResize={(w) => setWidth('sidebar', w)} />
-      <div className="flex items-center justify-between pb-1.5 pl-4 pr-3 pt-2">
-        <span className="flex items-center gap-2 text-[16px] font-semibold text-fg-bright"><img src={logo} alt="" className="size-[32px]" draggable={false} />Orc{transport?.kind === 'remote' && <span className="rounded-md bg-accent/20 px-1.5 py-0.5 text-[11px] font-medium text-[#93b4ff]">ssh: {transport.host}</span>}</span>
+      {/* One alignment line, 20px in (8px of pane padding + 12px of row padding), like Codex: the title, New chat, section names,
+          chat names and project folders all start on it; a project's chats start on its name. */}
+      <div className="flex items-center justify-between pb-1 pl-5 pr-3 pt-2">
+        <span className="flex items-center gap-1.5 text-[16px] font-semibold text-fg-bright">Orc<img src={logo} alt="" className="size-[32px]" draggable={false} />{transport?.kind === 'remote' && <span className="rounded-md bg-accent/20 px-1.5 py-0.5 text-[11px] font-medium text-[#93b4ff]">ssh: {transport.host}</span>}</span>
         <button onClick={() => openPalette('chats')} title={`Search chats${shortcuts.search[0] ? ` (${showCombo(shortcuts.search[0])})` : ''}`} className="no-drag flex size-8 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><Search size={18} strokeWidth={1.8} /></button>
       </div>
-      <button onClick={() => newChat()} className="mb-1 mt-1.5 flex w-full items-center gap-2 py-[5px] pl-[18px] pr-4 text-[14px] text-fg-bright hover:bg-bg-hover"><SquarePen size={15} /> New chat</button>
+      <div className="px-2 pt-1">
+        <button onClick={() => newChat()} className="flex w-full items-center gap-2 rounded-lg px-3 py-[6px] text-[14px] text-fg-bright hover:bg-bg-hover"><SquarePen size={16} /> New chat</button>
+      </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-0.5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {pinned.length > 0 && <Section id="pinned" label="Pinned" first ids={pinned.map((s) => s.id)}>{pinned.map((s) => <ChatRow key={s.id} s={s} row="pinned" lit={lit} />)}</Section>}
         <Section id="projects" label="Projects" first={pinned.length === 0} ids={recent.filter((s) => s.projectId).map((s) => s.id)} action={<AddProject />}>
           {projects.length === 0 && <Empty>No projects yet</Empty>}
@@ -39,9 +43,9 @@ export function Sidebar() {
           </Section>
         )}
       </div>
-      <div className="flex shrink-0 items-center px-3 pb-3 pt-1.5">
+      <div className="flex shrink-0 items-center px-2 pb-3 pt-1.5">
         <Menu beside animate="bottom" items={[{ label: 'Settings', icon: <Settings size={14} />, hint: shortcuts.settings[0] && showCombo(shortcuts.settings[0]), onSelect: () => openSettings() }, 'separator', { label: 'Quit', icon: <LogOut size={14} />, onSelect: () => window.orc.window.quit() }]}
-          trigger={(open) => <button title="Settings" className={`flex size-8 items-center justify-center rounded-md hover:bg-bg-hover hover:text-fg-bright ${open ? 'bg-bg-active text-fg-bright' : 'text-fg-2'}`}><Settings size={18} strokeWidth={1.8} /></button>} />
+          trigger={(open) => <button title="Settings" className={`flex h-8 items-center rounded-lg px-3 hover:bg-bg-hover hover:text-fg-bright ${open ? 'bg-bg-active text-fg-bright' : 'text-fg-2'}`}><Settings size={18} strokeWidth={1.8} /></button>} />
       </div>
     </aside>
   )
@@ -56,7 +60,7 @@ function Section({ id, label, ids, action, first, children }: { id: string; labe
   const open = !collapsed[id]
   return (
     <div>
-      <div role="button" aria-expanded={open} onClick={() => toggleCollapsed(id)} className={`group flex h-[26px] select-none items-center gap-1 rounded-md px-2.5 text-[12px] font-medium text-fg-label hover:text-fg ${first ? 'mt-0.5' : 'mt-1.5'}`}>
+      <div role="button" aria-expanded={open} onClick={() => toggleCollapsed(id)} className={`group flex h-8 select-none items-center gap-1 rounded-lg px-3 text-[14px] font-semibold text-fg-label hover:text-fg ${first ? 'mt-3' : 'mt-5'}`}>
         {label}
         <ChevronRight size={12} strokeWidth={2.2} className={`transition-transform duration-200 ${open ? 'rotate-90 opacity-0 group-hover:opacity-100' : ''}`} />
         <span className="ml-auto flex items-center">
@@ -68,7 +72,7 @@ function Section({ id, label, ids, action, first, children }: { id: string; labe
     </div>
   )
 }
-const Empty = ({ children }: { children: React.ReactNode }) => <div className="px-2.5 py-1 text-[13px] text-fg-3">{children}</div>
+const Empty = ({ children }: { children: React.ReactNode }) => <div className="px-3 py-[6px] text-[14px] text-fg-3">{children}</div>
 
 function AddProject() {
   const addProject = useStore((s) => s.addProject)
@@ -103,8 +107,8 @@ function ProjectRow({ p, chats, lit }: { p: Project; chats: Session[]; lit?: str
   const ctx = useContextMenu(() => [{ label: 'New chat', icon: <SquarePen size={14} />, onSelect: () => newChat(p.id) }, 'separator', { label: 'Remove project', icon: <Trash2 size={14} />, danger: true, onSelect: () => confirm(`Remove "${name}" and its ${chats.length} chat${chats.length === 1 ? '' : 's'}?`) && window.orc.projects.remove(p.id) }])
   return (
     <div>
-      <div role="button" aria-expanded={open} onClick={() => toggleCollapsed(key)} onContextMenu={ctx.onContextMenu} className={`group flex select-none items-center gap-[7px] rounded-md px-2.5 py-[3px] text-[14px] font-medium text-fg ${selected ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}>
-        {open ? <FolderOpen size={16} className="shrink-0 text-fg-2" /> : <Folder size={16} className="shrink-0 text-fg-2" />}
+      <div role="button" aria-expanded={open} onClick={() => toggleCollapsed(key)} onContextMenu={ctx.onContextMenu} className={`group flex select-none items-center gap-2 rounded-lg px-3 py-[6px] text-[14px] text-fg-bright ${selected ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}>
+        {open ? <FolderOpen size={16} className="shrink-0" /> : <Folder size={16} className="shrink-0" />} {/* the row's own white */}
         <span className="truncate">{name}</span>
         <Trailing indicator={!open && <Indicator ids={chats.map((c) => c.id)} />}>
           <button title={`New chat in ${name}`} onClick={(e) => { e.stopPropagation(); newChat(p.id) }} className="rounded p-0.5 text-fg-3 hover:text-fg"><SquarePen size={14} /></button>
@@ -131,7 +135,7 @@ function ChatRow({ s, row, lit, nested }: { s: Session; row: string; lit?: strin
   ])
   const active = activeId === s.id && row === lit
   return (
-    <div onClick={() => select(s.id, row)} onContextMenu={ctx.onContextMenu} className={`group flex cursor-default select-none items-center gap-2 rounded-md py-[3px] pr-1 text-[14px] ${nested ? 'pl-[38px]' : 'pl-2.5'} ${active ? 'bg-bg-active text-fg-bright' : 'text-fg-sub hover:bg-bg-hover hover:text-fg-bright'}`}>
+    <div onClick={() => select(s.id, row)} onContextMenu={ctx.onContextMenu} className={`group flex cursor-default select-none items-center gap-2 rounded-lg py-[6px] pr-2 text-[14px] ${nested ? 'pl-9' : 'pl-3'} text-fg-bright ${active ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}>
       {renaming
         ? <input autoFocus defaultValue={sessionTitle(s)} aria-label="Chat title" onClick={(e) => e.stopPropagation()} onBlur={(e) => commit(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') commit(e.currentTarget.value); if (e.key === 'Escape') setRenaming(false) }}

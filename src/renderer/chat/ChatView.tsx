@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Bot, Check, ChevronRight, Copy, FileText, Folder, Globe, Hand, ListChecks, Loader2, Pencil, Search, Terminal, Wrench, X } from 'lucide-react'
 import type { Item } from '@shared/types'
 import { AskCard } from './asks'
@@ -44,9 +44,18 @@ export function ChatView() {
   const stick = useRef(true)
   const [leaving, setLeaving] = useState(false) // the empty screen fading out over the first turn
   const hadSession = useRef(!!session)
-  const greeting = useRef({ project: '', text: '', stale: true }) // kept while the empty screen fades out over the first turn
-  if (!session && (greeting.current.stale || greeting.current.project !== (project?.id ?? ''))) greeting.current = { project: project?.id ?? '', text: greetingFor(project), stale: false }
+  // What the empty screen shows, kept as it was while it fades out (the chat it gave way to may be in another project).
+  const greeting = useRef({ project: '', text: '', path: '~', stale: true })
+  if (!session && (greeting.current.stale || greeting.current.project !== (project?.id ?? ''))) greeting.current = { project: project?.id ?? '', text: greetingFor(project), path: '', stale: false }
+  if (!session) greeting.current.path = project ? project.path.replace(/^\/Users\/[^/]+/, '~') : '~'
   if (session) greeting.current.stale = true
+  // Where it sat, too: the chat's header and the prompt's project bar come and go as it leaves, so it fades out over that same box.
+  const root = useRef<HTMLDivElement>(null), empty = useRef<HTMLDivElement>(null), box = useRef({ top: 0, height: 0 })
+  useLayoutEffect(() => {
+    if (session || !empty.current || !root.current) return
+    const a = empty.current.getBoundingClientRect(), r = root.current.getBoundingClientRect()
+    box.current = { top: a.top - r.top, height: a.height }
+  })
   useEffect(() => {
     if (session && !hadSession.current) { setLeaving(true); const t = setTimeout(() => setLeaving(false), 300); hadSession.current = true; return () => clearTimeout(t) }
     hadSession.current = !!session
@@ -56,8 +65,15 @@ export function ChatView() {
   useEffect(() => { if (stick.current) ref.current?.scrollTo({ top: ref.current.scrollHeight }) }, [items])
   const onScroll = () => { const el = ref.current!; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60 }
 
+  const emptyScreen = (
+    <>
+      <div className="logo-glow mb-3"><span className="logo-sway flex"><img src={logo} alt="" className="logo-float size-[104px]" draggable={false} /></span></div>
+      <div className="text-[30px] font-semibold tracking-tight text-fg-bright">{greeting.current.text}</div>
+      <div className="text-[13px]">Working in <code className="rounded bg-bg-active px-1.5 py-0.5 font-mono text-[12px]">{greeting.current.path}</code></div>
+    </>
+  )
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div ref={root} className="relative flex min-h-0 flex-1 flex-col">
       {window.orc.platform !== 'darwin' && session && <div data-testid="chat-header" className="flex h-[46px] shrink-0 items-center gap-2 border-b border-line px-4"><ChatHeader /></div>} {/* only for an open chat; on macOS it is part of the title bar */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         {session && (
@@ -66,14 +82,11 @@ export function ChatView() {
           </div>
         )}
         {session && <div data-testid="header-shade" aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-6" style={{ background: 'linear-gradient(var(--color-bg), transparent)' }} />} {/* the header's shadow, below its line: the conversation fades out under it */}
-        {(!session || leaving) && (
-          <div data-testid="empty-chat" className={`flex flex-1 select-none flex-col items-center justify-center gap-2 text-fg-3 ${leaving ? 'fade-out pointer-events-none absolute inset-0 bg-bg' : ''}`}>
-            <div className="logo-glow mb-3"><span className="logo-sway flex"><img src={logo} alt="" className="logo-float size-[104px]" draggable={false} /></span></div>
-            <div className="text-[30px] font-semibold tracking-tight text-fg-bright">{greeting.current.text}</div>
-            <div className="text-[13px]">Working in <code className="rounded bg-bg-active px-1.5 py-0.5 font-mono text-[12px]">{project ? project.path.replace(/^\/Users\/[^/]+/, '~') : '~'}</code></div>
-          </div>
-        )}
+        {!session && <div ref={empty} data-testid="empty-chat" className="flex flex-1 select-none flex-col items-center justify-center gap-2 text-fg-3">{emptyScreen}</div>}
       </div>
+      {session && leaving && (
+        <div data-testid="empty-chat" style={box.current} className="fade-out pointer-events-none absolute inset-x-0 z-10 flex select-none flex-col items-center justify-center gap-2 bg-bg text-fg-3">{emptyScreen}</div>
+      )}
     </div>
   )
 }

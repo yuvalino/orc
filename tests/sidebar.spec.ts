@@ -14,6 +14,28 @@ test('sidebar: arrow cursor, folding sections and projects, new-chat buttons, fo
     expect(await el.evaluate((e) => [getComputedStyle(e).cursor, getComputedStyle(e).userSelect].join())).toBe('default,none')
   }
 
+  // One alignment line, like Codex: the title, New chat, section names, top-level chat names and project folders start together;
+  // a project's chats start where its name does.
+  const x = await page.locator('[data-pane=sidebar]').evaluate((pane) => {
+    const text = (el: Element, t: string) => { const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.textContent!.trim() === t) { const r = document.createRange(); r.selectNodeContents(n); return Math.round(r.getBoundingClientRect().left) } return -1 }
+    const left = (el: Element | null | undefined) => Math.round(el!.getBoundingClientRect().left)
+    const rows = [...pane.querySelectorAll('div.group')]
+    const project = pane.querySelector('[role=button][aria-expanded]:not(:has(svg.lucide-chevron-right))') ?? [...pane.querySelectorAll('[role=button]')].find((e) => e.textContent?.includes('Fixture Project'))!
+    return {
+      title: text(pane, 'Orc'), logoAfter: left(pane.querySelector('img')) > text(pane, 'Orc'), newChat: left([...pane.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'New chat')?.querySelector('svg')),
+      section: text(pane, 'Projects'), recentChat: text(rows.filter((r) => r.textContent?.includes('Alpha chat')).at(-1)!, 'Alpha chat'), folder: left(project.querySelector('svg')),
+      projectName: text(project, 'Fixture Project'), nestedChat: text(rows.find((r) => r.textContent?.includes('Alpha chat'))!, 'Alpha chat')
+    }
+  })
+  expect(new Set([x.title, x.newChat, x.section, x.recentChat, x.folder]).size).toBe(1)
+  expect(x.logoAfter).toBe(true) // the logo follows the name
+  const white = 'rgb(229, 229, 229)', color = (l: typeof project) => l.evaluate((e) => getComputedStyle(e).color)
+  expect(await color(project)).toBe(white) // the project, its folder…
+  expect(await project.locator('svg').first().evaluate((e) => getComputedStyle(e).color)).toBe(white)
+  expect(await color(alphaUnder)).toBe(white) // …and every chat, selected or not, in the same white
+  expect(x.nestedChat).toBe(x.projectName)
+  expect(await page.locator('[role=button][aria-expanded]', { hasText: 'Projects' }).evaluate((e) => [getComputedStyle(e).fontSize, getComputedStyle(e).fontWeight])).toEqual(['14px', '600']) // section names: larger, bolder
+
   // A project folds its chats on a click: open folder ↔ closed folder, and the rows slide away under it.
   await expect(project).toHaveAttribute('aria-expanded', 'true')
   await expect(project.locator('svg.lucide-folder-open')).toHaveCount(1)

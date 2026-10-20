@@ -16,7 +16,11 @@ test('empty shell matches the Codex layout', async () => {
   await expect(page.getByText('New session')).toHaveCount(0) // a new chat has no header bar
   await expect(page.getByTestId('header-shade')).toHaveCount(0)
   await expect(page.getByTitle('Subagents', { exact: true })).toHaveCount(0)
+  const greetingAt = () => page.getByTestId('empty-chat').locator('.logo-glow').first().evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y)] })
+  const before = await greetingAt()
   await send(page, 'hello without a project')
+  await expect(page.locator('.fade-out[data-testid=empty-chat]')).toHaveCount(1) // fading out over the first turn…
+  expect(await greetingAt()).toEqual(before) // …right where it was, though the header and project bar came and went
   await expect(page.getByTitle('Subagents', { exact: true })).toBeVisible() // the open chat has one
   const shade = page.getByTestId('header-shade') // under its line, the conversation fades into the background color
   expect(await shade.evaluate((e) => getComputedStyle(e).backgroundImage)).toMatch(/^linear-gradient\(rgb\(30, 30, 30\), rgba\(0, 0, 0, 0\)\)$/)
