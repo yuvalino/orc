@@ -10,6 +10,7 @@ interface State {
   projects: Project[]
   sessions: Session[]
   activeId: string | null
+  activeRow: string | null // which sidebar row opened it ('pinned', 'recents', 'project:<id>'): only that one is highlighted
   draftProjectId: string | null
   transcripts: Record<string, Item[]>
   status: Record<string, SessionStatus>
@@ -25,7 +26,7 @@ interface State {
 
   init(): void
   setDefaults(patch: Partial<Defaults>): void
-  select(id: string): Promise<void>
+  select(id: string, row?: string): Promise<void>
   newChat(projectId?: string | null): void
   send(text: string): Promise<void>
   interrupt(): Promise<void>
@@ -66,7 +67,7 @@ function loadWidths(): State['widths'] {
 }
 
 export const useStore = create<State>((set, get) => ({
-  projects: [], sessions: [], activeId: null, draftProjectId: null, transcripts: {}, status: {}, models: [], account: null, draft: '', palette: null, panel: null, sidebarOpen: true, widths: loadWidths(),
+  projects: [], sessions: [], activeId: null, activeRow: null, draftProjectId: null, transcripts: {}, status: {}, models: [], account: null, draft: '', palette: null, panel: null, sidebarOpen: true, widths: loadWidths(),
   defaults: { approvalMode: 'ask', model: null, effort: null }, transport: null,
 
   init() {
@@ -107,8 +108,8 @@ export const useStore = create<State>((set, get) => ({
 
   setDefaults(patch) { Object.entries(patch).forEach(([k, v]) => api().settings.set(k, v)); set((s) => ({ defaults: { ...s.defaults, ...patch } })) },
 
-  async select(id) {
-    set((s) => ({ activeId: id, palette: null, panel: s.panel && { toolUseId: null } }))
+  async select(id, row) {
+    set((s) => ({ activeId: id, activeRow: row ?? null, palette: null, panel: s.panel && { toolUseId: null } }))
     api().sessions.markRead(id)
     if (!get().transcripts[id]) {
       // Each reply is stored in its own microtask so a patch pushed in between can't be overwritten by a stale snapshot.

@@ -20,8 +20,19 @@ test('saved transcripts reload, pins, rename, and interrupt', async () => {
   // The same menu pins and unpins.
   const count = await page.getByText('Renamed chat').count()
   await page.locator('div.group', { hasText: 'Renamed chat' }).first().click({ button: 'right' })
+  await expect(page.getByRole('menu').getByRole('separator')).toHaveCount(1) // Rename and Pin, then Permanently delete
+  await expect(page.getByRole('menu').locator('button svg')).toHaveCount(3) // each with its icon
   await page.getByRole('menu').getByText('Pin', { exact: true }).click()
   await expect(page.getByText('Renamed chat')).toHaveCount(count + 1) // also under Pinned
+
+  // Listed twice, it's highlighted only where it was clicked.
+  const lit = page.locator('div.group.bg-bg-active', { hasText: 'Renamed chat' })
+  await page.locator('div.group', { hasText: 'Renamed chat' }).last().click()
+  await expect(lit).toHaveCount(1)
+  expect(await lit.evaluate((e) => e === [...document.querySelectorAll('div.group')].filter((d) => d.textContent?.includes('Renamed chat')).at(-1))).toBe(true)
+  await page.locator('div.group', { hasText: 'Renamed chat' }).first().click()
+  await expect(lit).toHaveCount(1)
+
   await page.locator('div.group', { hasText: 'Renamed chat' }).first().click({ button: 'right' })
   await page.getByRole('menu').getByText('Unpin', { exact: true }).click()
   await expect(page.getByText('Renamed chat')).toHaveCount(count)

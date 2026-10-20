@@ -1,17 +1,20 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
-export interface MenuItem { label: ReactNode; detail?: string; onSelect?: () => void; active?: boolean; danger?: boolean; tone?: string } // tone: a text color class for the label, e.g. 'text-bypass'; the detail stays gray
+export interface MenuItem { label: ReactNode; icon?: ReactNode; detail?: string; onSelect?: () => void; active?: boolean; danger?: boolean; tone?: string } // tone: a text color class for the label, e.g. 'text-bypass'; the detail stays gray
 
 const panel = 'z-50 min-w-52 rounded-lg border border-line-strong bg-bg-composer p-1 shadow-xl'
 
-function Items({ items, header, close }: { items: MenuItem[]; header?: string; close: () => void }) {
+/** A menu's rows; 'separator' splits them into sections. */
+export type MenuEntry = MenuItem | 'separator'
+
+function Items({ items, header, close }: { items: MenuEntry[]; header?: string; close: () => void }) {
   return (
     <>
       {header && <div className="px-2.5 pb-1 pt-1.5 text-[12px] text-fg-2">{header}</div>}
-      {items.map((it, i) => (
+      {items.map((it, i) => it === 'separator' ? <div key={i} role="separator" className="mx-1 my-1 h-px bg-line-strong" /> : (
         <button key={i} onClick={(e) => { e.stopPropagation(); close(); it.onSelect?.() }}
           className={`flex w-full flex-col rounded-md px-2.5 py-1.5 text-[13px] hover:bg-bg-hover ${it.tone ?? (it.danger ? 'text-bad' : it.active ? 'text-fg-bright' : 'text-fg-sub')}`}>
-          <span className="flex w-full items-center gap-2">{it.label}{it.active && <span className="ml-auto text-accent">✓</span>}</span>
+          <span className="flex w-full items-center gap-2">{it.icon && <span className="flex size-4 shrink-0 items-center justify-center">{it.icon}</span>}{it.label}{it.active && <span className="ml-auto text-accent">✓</span>}</span>
           {it.detail && <span className={`text-[11px] ${it.danger && !it.tone ? 'text-bad/70' : 'text-fg-2'}`}>{it.detail}</span>}
         </button>
       ))}
@@ -20,7 +23,7 @@ function Items({ items, header, close }: { items: MenuItem[]; header?: string; c
 }
 
 /** Minimal popover menu anchored to its trigger; a function trigger is told whether the menu is open. `animate`: fades and slides in from the right, and back out. */
-export function Menu({ trigger, items, header, align = 'left', up, className = '', animate }: { trigger: ReactNode | ((open: boolean) => ReactNode); items: MenuItem[]; header?: string; align?: 'left' | 'right'; up?: boolean; className?: string; animate?: boolean }) {
+export function Menu({ trigger, items, header, align = 'left', up, className = '', animate }: { trigger: ReactNode | ((open: boolean) => ReactNode); items: MenuEntry[]; header?: string; align?: 'left' | 'right'; up?: boolean; className?: string; animate?: boolean }) {
   const [open, setOpenState] = useState(false), [closing, setClosing] = useState(false)
   const setOpen = (next: boolean | ((o: boolean) => boolean)) => {
     const v = typeof next === 'function' ? next(open) : next
@@ -47,7 +50,7 @@ export function Menu({ trigger, items, header, align = 'left', up, className = '
 }
 
 /** The same menu opened at the pointer by a right click: spread `onContextMenu` on the target and render `menu` inside it. */
-export function useContextMenu(items: () => MenuItem[]) {
+export function useContextMenu(items: () => MenuEntry[]) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
