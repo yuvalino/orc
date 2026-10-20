@@ -21,6 +21,7 @@ interface State {
   palette: null | 'chats' | 'files' | 'hosts' | 'folders' | 'signin'
   panel: null | { toolUseId: string | null } // Subagents panel: closed, the lists, or one agent's thread
   sidebarOpen: boolean
+  collapsed: Record<string, boolean> // folded sidebar sections and projects ('pinned', 'projects', 'recents', 'project:<id>'); remembered (localStorage)
   widths: { sidebar: number; panel: number; settings: number } // remembered per browser profile (localStorage)
   settings: null | { tab: SettingsTab; editing?: 'instructions' } // the settings screen covers the window below the title bar
   shortcuts: Shortcuts // remembered per browser profile (localStorage)
@@ -36,6 +37,7 @@ interface State {
   stopTask(taskId: string): Promise<void>
   setPanel(panel: State['panel']): void
   toggleSidebar(): void
+  toggleCollapsed(key: string): void
   setWidth(pane: keyof State['widths'], w: number): void
   openSettings(tab?: SettingsTab): void
   closeSettings(): void
@@ -78,6 +80,10 @@ function minMain(): number {
 }
 const saveWidths = (w: State['widths']) => { try { localStorage.setItem('orc.widths', JSON.stringify(w)) } catch { /* not persisted */ } }
 
+function loadCollapsed(): Record<string, boolean> {
+  try { const c = JSON.parse(localStorage.getItem('orc.collapsed') ?? '{}'); return c && typeof c === 'object' ? c : {} } catch { return {} }
+}
+
 function loadWidths(): State['widths'] {
   const clamp = (v: unknown, p: (typeof PANE)[keyof typeof PANE]) => (typeof v === 'number' ? Math.min(p.max, Math.max(p.min, v)) : p.initial)
   let w: Record<string, unknown> = {}
@@ -86,7 +92,7 @@ function loadWidths(): State['widths'] {
 }
 
 export const useStore = create<State>((set, get) => ({
-  projects: [], sessions: [], activeId: null, activeRow: null, draftProjectId: null, transcripts: {}, status: {}, models: [], account: null, draft: '', palette: null, panel: null, sidebarOpen: true, widths: loadWidths(), settings: null, shortcuts: loadShortcuts(),
+  projects: [], sessions: [], activeId: null, activeRow: null, draftProjectId: null, transcripts: {}, status: {}, models: [], account: null, draft: '', palette: null, panel: null, sidebarOpen: true, collapsed: loadCollapsed(), widths: loadWidths(), settings: null, shortcuts: loadShortcuts(),
   defaults: { approvalMode: 'ask', model: null, effort: null }, transport: null,
 
   init() {
@@ -157,6 +163,10 @@ export const useStore = create<State>((set, get) => ({
   async interrupt() { const id = get().activeId; if (id) await api().sessions.interrupt(id) },
   async stopTask(taskId) { const id = get().activeId; if (id) await api().sessions.stopTask(id, taskId) },
   setPanel: (panel) => { set({ panel }); get().fitPanes() },
+  toggleCollapsed(key) {
+    const collapsed = { ...get().collapsed, [key]: !get().collapsed[key] }
+    set({ collapsed }); try { localStorage.setItem('orc.collapsed', JSON.stringify(collapsed)) } catch { /* not persisted */ }
+  },
   toggleSidebar: () => { set((s) => ({ sidebarOpen: !s.sidebarOpen })); get().fitPanes() },
   setWidth(pane, w) {
     const s = get(), other = pane === 'sidebar' ? (s.panel && s.activeId ? s.widths.panel : 0) : pane === 'panel' ? (s.sidebarOpen ? s.widths.sidebar : 0) : 0

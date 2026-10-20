@@ -33,7 +33,7 @@ test('questions, plans, denials, and asks pending in a background chat', async (
   await page.getByText('Chat about question').first().click()
   await expect(page.locator('[title="Needs your attention"]').first()).toBeVisible()
   await shot(page, 'asks-background-badge')
-  await page.locator('aside div.cursor-pointer', { has: page.locator('[title="Needs your attention"]') }).last().click() // the row: hovering it swaps the dot for buttons
+  await page.locator('aside div.cursor-default', { has: page.locator('[title="Needs your attention"]') }).last().click() // the row: hovering it swaps the dot for buttons
   await expect(page.getByRole('button', { name: 'Deny' })).toBeVisible()
   await c.close()
 })

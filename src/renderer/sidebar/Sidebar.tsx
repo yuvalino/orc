@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Folder, Loader2, Pencil, Pin, PinOff, Plus, Search, Settings, SquarePen, Trash2 } from 'lucide-react'
+import { ChevronRight, Folder, FolderOpen, Loader2, Pencil, Pin, PinOff, Plus, Search, Settings, SquarePen, Trash2 } from 'lucide-react'
 import type { Project, Session } from '@shared/types'
+import { Collapse } from '../lib/Collapse'
 import { Menu, useContextMenu } from '../lib/Menu'
 import { Resizer } from '../lib/Resizer'
 import { PANE, sessionTitle, useStore } from '../stores/store'
@@ -8,12 +9,14 @@ import { showCombo } from '../lib/shortcuts'
 import logo from '../assets/logo.png'
 
 export function Sidebar() {
-  const { projects, sessions, newChat, openPalette, openSettings, transport, widths, setWidth, activeId, activeRow, shortcuts } = useStore()
+  const { projects, sessions, newChat, openPalette, openSettings, transport, widths, setWidth, activeId, activeRow, shortcuts, collapsed } = useStore()
   const recent = [...sessions].sort((a, b) => b.lastActivityAt - a.lastActivityAt)
   const pinned = recent.filter((s) => s.isPinned)
+  const projectChats = (p: Project) => recent.filter((s) => s.projectId === p.id)
   // A chat can be listed more than once (pinned, under its project, in recents): highlight only the row it was opened from,
-  // or its first row when it was opened elsewhere (search, a new chat).
-  const rows = [pinned.some((s) => s.id === activeId) && 'pinned', ...projects.map((p) => recent.filter((s) => s.projectId === p.id).slice(0, 5).some((s) => s.id === activeId) && `project:${p.id}`), recent.slice(0, 20).some((s) => s.id === activeId) && 'recents'].filter(Boolean) as string[]
+  // or its first unfolded row when it was opened elsewhere (search, a new chat).
+  const has = (list: Session[]) => list.some((s) => s.id === activeId)
+  const rows = [!collapsed.pinned && has(pinned) && 'pinned', ...projects.map((p) => !collapsed.projects && !collapsed[`project:${p.id}`] && has(projectChats(p).slice(0, 5)) && `project:${p.id}`), !collapsed.recents && has(recent.slice(0, 20)) && 'recents'].filter(Boolean) as string[]
   const lit = activeRow && rows.includes(activeRow) ? activeRow : rows[0]
   return (
     <aside className="relative flex w-full flex-col bg-bg-sidebar">
@@ -25,12 +28,16 @@ export function Sidebar() {
       <button onClick={() => newChat()} className="mb-1 mt-1.5 flex w-full items-center gap-2 py-[5px] pl-[18px] pr-4 text-[14px] text-fg-bright hover:bg-bg-hover"><SquarePen size={15} /> New chat</button>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-0.5">
-        {pinned.length > 0 && <Section label="Pinned" first>{pinned.map((s) => <ChatRow key={s.id} s={s} row="pinned" lit={lit} />)}</Section>}
-        <Section label="Projects" first={pinned.length === 0} action={<AddProject />}>
+        {pinned.length > 0 && <Section id="pinned" label="Pinned" first ids={pinned.map((s) => s.id)}>{pinned.map((s) => <ChatRow key={s.id} s={s} row="pinned" lit={lit} />)}</Section>}
+        <Section id="projects" label="Projects" first={pinned.length === 0} ids={recent.filter((s) => s.projectId).map((s) => s.id)} action={<AddProject />}>
           {projects.length === 0 && <Empty>No projects yet</Empty>}
-          {projects.map((p) => <ProjectRow key={p.id} p={p} chats={recent.filter((s) => s.projectId === p.id)} lit={lit} />)}
+          {projects.map((p) => <ProjectRow key={p.id} p={p} chats={projectChats(p)} lit={lit} />)}
         </Section>
-        {recent.length > 0 && <Section label="Recents">{recent.slice(0, 20).map((s) => <ChatRow key={s.id} s={s} row="recents" lit={lit} />)}</Section>}
+        {recent.length > 0 && (
+          <Section id="recents" label="Recents" ids={recent.slice(0, 20).map((s) => s.id)} action={<button onClick={() => newChat()} title="New chat" className="rounded p-0.5 text-fg-3 hover:text-fg"><SquarePen size={14} /></button>}>
+            {recent.slice(0, 20).map((s) => <ChatRow key={s.id} s={s} row="recents" lit={lit} />)}
+          </Section>
+        )}
       </div>
       <div className="flex shrink-0 items-center px-3 pb-3 pt-1.5">
         <Menu beside animate="bottom" items={[{ label: 'Settings', icon: <Settings size={14} />, hint: shortcuts.settings[0] && showCombo(shortcuts.settings[0]), onSelect: () => openSettings() }]}
@@ -40,17 +47,32 @@ export function Sidebar() {
   )
 }
 
-const Section = ({ label, action, first, children }: { label: string; action?: React.ReactNode; first?: boolean; children: React.ReactNode }) => (
-  <div>
-    <div className={`group flex items-center justify-between px-2.5 pb-0.5 text-[12px] font-medium text-fg-label ${first ? 'pt-1' : 'pt-2'}`}>{label}{action}</div>
-    {children}
-  </div>
-)
+/**
+ * A titled group that folds on a click of its title. Folded, its title shows a › and the combined status of the chats inside;
+ * open, the arrow (turned down) shows only while hovered. `ids`: the chats it holds.
+ */
+function Section({ id, label, ids, action, first, children }: { id: string; label: string; ids: string[]; action?: React.ReactNode; first?: boolean; children: React.ReactNode }) {
+  const { collapsed, toggleCollapsed } = useStore()
+  const open = !collapsed[id]
+  return (
+    <div>
+      <div role="button" aria-expanded={open} onClick={() => toggleCollapsed(id)} className={`group flex h-[26px] select-none items-center gap-1 rounded-md px-2.5 text-[12px] font-medium text-fg-label hover:text-fg ${first ? 'mt-0.5' : 'mt-1.5'}`}>
+        {label}
+        <ChevronRight size={12} strokeWidth={2.2} className={`transition-transform duration-200 ${open ? 'rotate-90 opacity-0 group-hover:opacity-100' : ''}`} />
+        <span className="ml-auto flex items-center">
+          {!open && <span className="flex group-hover:hidden"><Indicator ids={ids} /></span>}
+          {action && <span onClick={(e) => e.stopPropagation()} className="hidden group-hover:flex">{action}</span>}
+        </span>
+      </div>
+      <Collapse open={open}>{children}</Collapse>
+    </div>
+  )
+}
 const Empty = ({ children }: { children: React.ReactNode }) => <div className="px-2.5 py-1 text-[13px] text-fg-3">{children}</div>
 
 function AddProject() {
   const addProject = useStore((s) => s.addProject)
-  return <button onClick={addProject} title="Add project" className="rounded p-0.5 text-fg-3 opacity-0 hover:text-fg group-hover:opacity-100"><Plus size={14} /></button>
+  return <button onClick={addProject} title="Add project" className="rounded p-0.5 text-fg-3 hover:text-fg"><Plus size={14} /></button>
 }
 
 /** Running → spinner; finished while you were elsewhere → dot; waiting on you → amber dot. */
@@ -73,19 +95,23 @@ function Trailing({ indicator, children }: { indicator: React.ReactNode; childre
   )
 }
 
+/** A project folds its chats on a click (open folder ↔ closed folder); folded, it shows their combined status. */
 function ProjectRow({ p, chats, lit }: { p: Project; chats: Session[]; lit?: string }) {
-  const { newChat, draftProjectId, activeId } = useStore()
+  const { newChat, draftProjectId, activeId, collapsed, toggleCollapsed } = useStore()
+  const key = `project:${p.id}`, open = !collapsed[key], name = p.name ?? p.path.split(/[\\/]/).pop()
   const selected = !activeId && draftProjectId === p.id
-  const ctx = useContextMenu(() => [{ label: 'New chat', onSelect: () => newChat(p.id) }, { label: 'Remove project', danger: true, onSelect: () => confirm(`Remove "${p.name ?? p.path.split(/[\\/]/).pop()}" and its ${chats.length} chat${chats.length === 1 ? '' : 's'}?`) && window.orc.projects.remove(p.id) }])
+  const ctx = useContextMenu(() => [{ label: 'New chat', icon: <SquarePen size={14} />, onSelect: () => newChat(p.id) }, 'separator', { label: 'Remove project', icon: <Trash2 size={14} />, danger: true, onSelect: () => confirm(`Remove "${name}" and its ${chats.length} chat${chats.length === 1 ? '' : 's'}?`) && window.orc.projects.remove(p.id) }])
   return (
     <div>
-      <div onClick={() => newChat(p.id)} onContextMenu={ctx.onContextMenu} className={`group flex cursor-pointer items-center gap-[7px] rounded-md px-2.5 py-[3px] text-[14px] font-medium text-fg ${selected ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}>
-        <Folder size={16} className="shrink-0 text-fg-2" />
-        <span className="truncate">{p.name ?? p.path.split(/[\\/]/).pop()}</span>
-        <span className="ml-auto flex shrink-0 items-center"><Indicator ids={chats.map((c) => c.id)} /></span>
+      <div role="button" aria-expanded={open} onClick={() => toggleCollapsed(key)} onContextMenu={ctx.onContextMenu} className={`group flex select-none items-center gap-[7px] rounded-md px-2.5 py-[3px] text-[14px] font-medium text-fg ${selected ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}>
+        {open ? <FolderOpen size={16} className="shrink-0 text-fg-2" /> : <Folder size={16} className="shrink-0 text-fg-2" />}
+        <span className="truncate">{name}</span>
+        <Trailing indicator={!open && <Indicator ids={chats.map((c) => c.id)} />}>
+          <button title={`New chat in ${name}`} onClick={(e) => { e.stopPropagation(); newChat(p.id) }} className="rounded p-0.5 text-fg-3 hover:text-fg"><SquarePen size={14} /></button>
+        </Trailing>
         {ctx.menu}
       </div>
-      {chats.slice(0, 5).map((s) => <ChatRow key={s.id} s={s} row={`project:${p.id}`} lit={lit} nested />)}
+      <Collapse open={open}>{chats.slice(0, 5).map((s) => <ChatRow key={s.id} s={s} row={key} lit={lit} nested />)}</Collapse>
     </div>
   )
 }
@@ -105,7 +131,7 @@ function ChatRow({ s, row, lit, nested }: { s: Session; row: string; lit?: strin
   ])
   const active = activeId === s.id && row === lit
   return (
-    <div onClick={() => select(s.id, row)} onContextMenu={ctx.onContextMenu} className={`group flex cursor-pointer items-center gap-2 rounded-md py-[3px] pr-1 text-[14px] ${nested ? 'pl-[38px]' : 'pl-2.5'} ${active ? 'bg-bg-active text-fg-bright' : 'text-fg-sub hover:bg-bg-hover hover:text-fg-bright'}`}>
+    <div onClick={() => select(s.id, row)} onContextMenu={ctx.onContextMenu} className={`group flex cursor-default select-none items-center gap-2 rounded-md py-[3px] pr-1 text-[14px] ${nested ? 'pl-[38px]' : 'pl-2.5'} ${active ? 'bg-bg-active text-fg-bright' : 'text-fg-sub hover:bg-bg-hover hover:text-fg-bright'}`}>
       {renaming
         ? <input autoFocus defaultValue={sessionTitle(s)} aria-label="Chat title" onClick={(e) => e.stopPropagation()} onBlur={(e) => commit(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') commit(e.currentTarget.value); if (e.key === 'Escape') setRenaming(false) }}

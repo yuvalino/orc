@@ -12,7 +12,7 @@ test('two windows on one instance share chats, asks and unread', async () => {
   // An ask raised in window 1 can be answered from window 2; both see the outcome.
   await send(w1, 'edit a file')
   await expect(w1.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
-  const row = w2.locator('aside div.cursor-pointer', { hasText: 'New chat' }).first() // untitled until its first turn ends
+  const row = w2.locator('aside div.cursor-default', { hasText: 'New chat' }).first() // untitled until its first turn ends
   await expect(row).toBeVisible()
   await row.click()
   await expect(w2.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
@@ -27,7 +27,7 @@ test('two windows on one instance share chats, asks and unread', async () => {
   await send(w1, 'background please')
   await expect(w1.getByText(/^Worked for/).first()).toBeVisible()
   await w1.getByRole('button', { name: 'New chat' }).click() // leave before the relay turn finishes
-  const dot = (w: typeof w1) => w.locator('aside div.cursor-pointer', { hasText: 'Chat about background' }).locator('[title="Finished"]')
+  const dot = (w: typeof w1) => w.locator('aside div.cursor-default', { hasText: 'Chat about background' }).locator('[title="Finished"]')
   await expect(dot(w1).first()).toBeVisible()
   await expect(dot(w2).first()).toBeVisible()
   await shot(w1, 'windows-unread')

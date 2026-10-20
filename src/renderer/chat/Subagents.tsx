@@ -65,7 +65,7 @@ function TaskList({ tools, onOpen, stop }: { tools: Tool[]; onOpen: (t: Tool) =>
       <Head>Active · {active.length}</Head>
       {active.length === 0 && <div className="px-2 pb-3 text-fg-2">No active subagents</div>}
       {active.map((t) => (
-        <div key={t.id} onClick={() => onOpen(t)} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-bg-hover">
+        <div key={t.id} onClick={() => onOpen(t)} className="flex cursor-default select-none items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-bg-hover">
           <Logo tool={t} />
           <div className="min-w-0 flex-1"><div className="truncate font-medium text-fg-bright">{taskName(t)}</div><div className="truncate text-[12px] text-fg-2">Working{t.task?.summary ? ` · ${t.task.summary}` : t.task?.background ? ' · background' : ''}</div></div>
           <span className="shrink-0 text-[12px] text-fg-2">{elapsed(t.task?.startedAt, now)}</span>
@@ -74,7 +74,7 @@ function TaskList({ tools, onOpen, stop }: { tools: Tool[]; onOpen: (t: Tool) =>
       ))}
       <Head>Done · {done.length}</Head>
       {done.map((t) => (
-        <div key={t.id} onClick={() => onOpen(t)} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-bg-hover">
+        <div key={t.id} onClick={() => onOpen(t)} className="flex cursor-default select-none items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-bg-hover">
           <Logo tool={t} /><span className="min-w-0 flex-1 truncate font-medium text-fg-bright">{taskName(t)}</span>
           <span className="shrink-0 text-[12px] text-fg-2">{t.status === 'error' ? 'failed' : t.status === 'interrupted' || t.status === 'denied' ? 'stopped' : ago(t.task?.endedAt, now)}</span>
         </div>
