@@ -22,6 +22,8 @@ test('settings: cog menu, tabs and search, CLAUDE.md editor, recorded shortcuts'
   expect(right).toBeGreaterThan(paneRight.x + paneRight.width) // it reaches past the sidebar's edge…
   expect(await menu.evaluate((m, [x, y]) => m.contains(document.elementFromPoint(x, y)), [right - 4, menuBox.y + menuBox.height / 2])).toBe(true) // …and isn't cut off there
   expect(await page.getByRole('button', { name: /^Settings/ }).last().evaluate((b) => b.getBoundingClientRect().height)).toBeLessThan(40) // its shortcut sits on the same line
+  await expect(menu.getByRole('separator')).toHaveCount(1) // Settings, then its own section with Quit
+  await expect(menu.getByRole('button', { name: 'Quit' })).toBeVisible()
   await shot(page, 'settings-menu')
   await page.getByRole('button', { name: /^Settings/ }).last().click()
   await expect(page.getByRole('heading', { name: 'Personalization' })).toBeVisible()

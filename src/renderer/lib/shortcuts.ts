@@ -6,7 +6,7 @@ export const SHORTCUTS: { id: ShortcutAction; name: string; desc: string; defaul
   { id: 'back', name: 'Back', desc: 'Go back to where you were', defaults: ['Mod+['] },
   { id: 'forward', name: 'Forward', desc: 'Go forward again', defaults: ['Mod+]'] },
   { id: 'newChat', name: 'New chat', desc: 'Start a new chat', defaults: ['Mod+N'] },
-  { id: 'newWindow', name: 'New window', desc: 'Open another orc window', defaults: ['Mod+Shift+N'] },
+  { id: 'newWindow', name: 'New window', desc: 'Open another Orc window', defaults: ['Mod+Shift+N'] },
   { id: 'search', name: 'Search chats', desc: 'Find a chat or run a command', defaults: ['Mod+P'] },
   { id: 'toggleSidebar', name: 'Toggle sidebar', desc: 'Show or hide the chat list', defaults: ['Mod+B'] },
   { id: 'settings', name: 'Settings', desc: 'Open settings', defaults: ['Mod+,'] }

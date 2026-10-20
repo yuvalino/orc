@@ -9,7 +9,7 @@ test('sidebar: arrow cursor, folding sections and projects, new-chat buttons, fo
   const alphaUnder = page.locator('[data-pane=sidebar] div.group', { hasText: 'Alpha chat' }).first() // under the project
 
   // Clickable things keep the arrow cursor, and their text can't be selected.
-  expect(await page.locator('[data-pane=sidebar]').getByText('orc', { exact: true }).evaluate((e) => getComputedStyle(e).userSelect)).toBe('none') // the title too
+  expect(await page.locator('[data-pane=sidebar]').getByText('Orc', { exact: true }).evaluate((e) => getComputedStyle(e).userSelect)).toBe('none') // the title too
   for (const el of [page.getByRole('button', { name: 'New chat' }), alphaUnder, project]) {
     expect(await el.evaluate((e) => [getComputedStyle(e).cursor, getComputedStyle(e).userSelect].join())).toBe('default,none')
   }

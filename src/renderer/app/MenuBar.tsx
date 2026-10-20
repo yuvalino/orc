@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { MenuBarMenu } from '@shared/api'
 
 const keys = (a: string) => a.replace(/CmdOrCtrl|CommandOrControl|Control/, 'Ctrl').replace('Plus', '+')
-const LABELS = ['File', 'Edit', 'View', 'Window', 'Help'] // drawn before the items arrive
+const LABELS = ['File', 'Edit', 'View', 'Help'] // drawn before the items arrive
 
 /**
  * The application menu, drawn in the title bar off macOS. Like a native menu bar: a click opens a menu, and while one is open,

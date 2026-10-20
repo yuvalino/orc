@@ -7,7 +7,7 @@
   --color-bg-composer: #303030;
   --color-bg-hover: #2a2d2e;
   --color-bg-active: rgba(255, 255, 255, 0.08);
-  --color-bubble: #2563eb;
+  --color-bubble: #1d4fc4; /* a shade darker than the accent */
   --color-fg: #cccccc;
   --color-fg-bright: #e5e5e5;
   --color-fg-sub: #bbbbbb;

@@ -1,5 +1,5 @@
 appId: dev.orc.app
-productName: orc
+productName: Orc
 directories:
   output: dist
 files:

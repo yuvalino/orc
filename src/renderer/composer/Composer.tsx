@@ -59,7 +59,7 @@ export function Composer() {
         <Menu up className="mx-3" trigger={<button className="flex w-full items-center gap-2 rounded-t-xl bg-[#272727] px-4 py-2 text-[13px] text-fg-sub hover:text-fg-bright"><Folder size={14} />{projectName()}<ChevronDown size={11} /></button>} items={projectItems} />
       )}
       <div className="rounded-[14px] bg-bg-composer">
-        <textarea ref={ref} value={draft} onChange={(e) => setDraft(e.target.value)} rows={1} placeholder="Work with orc" autoFocus
+        <textarea ref={ref} value={draft} onChange={(e) => setDraft(e.target.value)} rows={1} placeholder="Work with Orc" autoFocus
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
           className="block w-full resize-none bg-transparent px-4 pb-1.5 pt-3.5 text-[14px] leading-normal outline-none placeholder:text-fg-3" />
         <div ref={row} data-composer-row className="flex items-center gap-0.5 whitespace-nowrap px-2 pb-2 pt-1 [&>*]:shrink-0">

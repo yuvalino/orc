@@ -22,10 +22,10 @@ function explain(detail: string, code: number | null): string {
 }
 const INSTALL_FAILED: Record<string, string> = {
   'no-curl': 'The host has no curl, which the one-time install needs.',
-  download: 'The host could not download the orc server bundle; it needs internet access to github.com.',
-  sha256: 'The downloaded orc server bundle did not match its checksum.',
-  unpacking: 'The orc server bundle could not be unpacked on the host.',
-  'no-bundle': "This build of orc ships no server bundle for the host's platform.",
+  download: 'The host could not download the Orc server bundle; it needs internet access to github.com.',
+  sha256: 'The downloaded Orc server bundle did not match its checksum.',
+  unpacking: 'The Orc server bundle could not be unpacked on the host.',
+  'no-bundle': "This build of Orc ships no server bundle for the host's platform.",
   'unsupported-host': 'orc-server runs on macOS, glibc ≥ 2.28 Linux and Windows (x64/arm64); this host is something else.'
 }
 

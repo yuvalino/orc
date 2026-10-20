@@ -57,12 +57,29 @@ test('side panes resize within limits, Ctrl+P searches, bypass is orange, replie
   await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBeLessThan(capped)
   expect(await fits()).toBe(true)
 
+  // Button rows: under every message, their space always kept. Only the latest reply's buttons stay; the rest, and every time, show on hover.
   await send(page, 'hello')
   await expect(page.getByText('Hello from Claude')).toBeVisible()
-  await page.mouse.move(5, 5) // nothing hovered: the Copy button still shows
-  await expect(page.getByTitle('Copy')).toBeVisible()
-  await page.getByText('Hello from Claude').hover()
-  await expect(page.getByText(/^(\w+day |\d{1,2}\/\d{1,2}\/\d{4} )?\d{2}:\d{2}\s?[AP]M$/)).toBeVisible() // the fixture's reply carries its recorded timestamp
+  await expect(page.locator('[title="Stop (Esc)"]')).toHaveCount(0)
+  await send(page, 'hello')
+  await expect(page.locator('[title="Stop (Esc)"]')).toHaveCount(0) // the second turn is done
+  const rows = page.locator('[data-actions]'), seen = (l: ReturnType<typeof rows.nth>) => l.evaluate((e) => getComputedStyle(e).opacity)
+  await expect(rows).toHaveCount(4) // you, reply, you, reply
+  for (const h of await rows.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) expect(h).toBe(28)
+  const [you, earlier, latest] = [rows.nth(2), rows.nth(1), rows.nth(3)]
+  await page.mouse.move(5, 5)
+  await expect.poll(() => seen(latest.getByTitle('Copy'))).toBe('1') // the latest reply's Copy stays
+  await expect.poll(() => seen(latest.locator('span'))).toBe('0') // …its time waits for a hover
+  await expect.poll(() => seen(earlier.getByTitle('Copy'))).toBe('0')
+  await expect.poll(() => seen(you.getByTitle('Copy'))).toBe('0')
+  await latest.locator('xpath=..').hover()
+  await expect.poll(() => seen(latest.locator('span'))).toBe('1')
+  await expect(latest.locator('span')).toHaveText(/^(\w+day |\d{1,2}\/\d{1,2}\/\d{4} )?\d{2}:\d{2}\s?[AP]M$/) // the fixture's reply carries its recorded timestamp
+  await page.locator('.bg-bubble').last().hover() // your message: its row appears, the time on the button's left
+  await expect.poll(() => seen(you.getByTitle('Copy'))).toBe('1')
+  await expect.poll(() => seen(you.locator('span'))).toBe('1')
+  expect(await you.evaluate((e) => e.querySelector('span')!.getBoundingClientRect().right <= e.querySelector('button')!.getBoundingClientRect().left)).toBe(true)
+  expect(await page.locator('.bg-bubble').last().evaluate((e) => getComputedStyle(e).backgroundColor)).toBe('rgb(29, 79, 196)') // a shade darker than the accent
   await shot(page, 'layout')
   await c.close()
 })

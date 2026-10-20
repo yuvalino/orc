@@ -7,6 +7,7 @@ export interface PushEvents {
   'projects:changed': Project[]
   'menu:new-chat': undefined
   'menu:settings': undefined
+  'menu:open-folder': undefined
   'transport:state': TransportState
 }
 
@@ -53,7 +54,7 @@ export interface OrcApi {
   codecInfo(): Promise<{ models: ModelOption[]; account: Account | null }>
   settings: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }
   instructions: { get(): Promise<{ path: string; text: string | null }>; set(text: string): Promise<void> } // the user's CLAUDE.md on the engine's machine; text null: no file yet
-  window: { open(): Promise<void> } // another window on this instance
+  window: { open(): Promise<void>; quit(): Promise<void> } // open: another window on this instance; quit: the whole app
   transport: {
     state(): Promise<TransportState>
     takeover(): Promise<void>

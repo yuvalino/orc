@@ -13,10 +13,20 @@ test('empty shell matches the Codex layout', async () => {
   await expect(page.getByText('No projects yet')).toBeVisible()
   await expect(page.getByText('New chat')).toBeVisible()
   await expect(page.getByText('No project', { exact: true })).toBeVisible()
+  await expect(page.getByText('New session')).toHaveCount(0) // a new chat has no header bar
+  await expect(page.getByTestId('header-shade')).toHaveCount(0)
+  await expect(page.getByTitle('Subagents', { exact: true })).toHaveCount(0)
   await send(page, 'hello without a project')
+  await expect(page.getByTitle('Subagents', { exact: true })).toBeVisible() // the open chat has one
+  const shade = page.getByTestId('header-shade') // under its line, the conversation fades into the background color
+  expect(await shade.evaluate((e) => getComputedStyle(e).backgroundImage)).toMatch(/^linear-gradient\(rgb\(30, 30, 30\), rgba\(0, 0, 0, 0\)\)$/)
+  expect(await page.getByTestId('chat-header').evaluate((e) => getComputedStyle(e).borderBottomWidth)).toBe('1px') // the line stays; the fade is beneath it
+  const edge = (await page.getByRole('separator').first().boundingBox())!, top = (await shade.boundingBox())!.y + 3
+  expect(await shade.evaluate((e, [x, y]) => { e.style.pointerEvents = 'auto'; const hit = document.elementFromPoint(x, y); e.style.pointerEvents = ''; return !!hit?.closest('[role=separator]') }, [edge.x + edge.width / 2, top])).toBe(true) // the sidebar's edge stays above the fade
+  expect(await page.locator('main span.truncate').first().evaluate((e) => getComputedStyle(e).userSelect)).toBe('none') // its title isn't text to select
   await expect(page.getByText('Hello from Claude')).toBeVisible()
   await expect(page.getByText('~', { exact: true })).toBeHidden()
-  await expect(page.locator('textarea')).toHaveAttribute('placeholder', 'Work with orc')
+  await expect(page.locator('textarea')).toHaveAttribute('placeholder', 'Work with Orc')
   await expect(page.getByText('Ask for approval')).toBeVisible()
   expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(30, 30, 30)')
   await shot(page, 'shell-empty')

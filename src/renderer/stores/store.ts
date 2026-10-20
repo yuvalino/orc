@@ -138,6 +138,7 @@ export const useStore = create<State>((set, get) => ({
     })
     api().on('menu:new-chat', () => get().newChat())
     api().on('menu:settings', () => get().openSettings())
+    api().on('menu:open-folder', () => get().addProject())
     menuShortcuts(get().shortcuts)
   },
 

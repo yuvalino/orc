@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, Folder, FolderOpen, Loader2, Pencil, Pin, PinOff, Plus, Search, Settings, SquarePen, Trash2 } from 'lucide-react'
+import { ChevronRight, Folder, FolderOpen, Loader2, LogOut, Pencil, Pin, PinOff, Plus, Search, Settings, SquarePen, Trash2 } from 'lucide-react'
 import type { Project, Session } from '@shared/types'
 import { Collapse } from '../lib/Collapse'
 import { Menu, useContextMenu } from '../lib/Menu'
@@ -22,7 +22,7 @@ export function Sidebar() {
     <aside className="relative flex w-full select-none flex-col bg-bg-sidebar"> {/* all chrome: nothing here is text to select (the rename box opts back in) */}
       <Resizer edge="right" width={widths.sidebar} {...PANE.sidebar} onResize={(w) => setWidth('sidebar', w)} />
       <div className="flex items-center justify-between pb-1.5 pl-4 pr-3 pt-2">
-        <span className="flex items-center gap-2 text-[16px] font-semibold text-fg-bright"><img src={logo} alt="" className="size-[32px]" draggable={false} />orc{transport?.kind === 'remote' && <span className="rounded-md bg-accent/20 px-1.5 py-0.5 text-[11px] font-medium text-[#93b4ff]">ssh: {transport.host}</span>}</span>
+        <span className="flex items-center gap-2 text-[16px] font-semibold text-fg-bright"><img src={logo} alt="" className="size-[32px]" draggable={false} />Orc{transport?.kind === 'remote' && <span className="rounded-md bg-accent/20 px-1.5 py-0.5 text-[11px] font-medium text-[#93b4ff]">ssh: {transport.host}</span>}</span>
         <button onClick={() => openPalette('chats')} title={`Search chats${shortcuts.search[0] ? ` (${showCombo(shortcuts.search[0])})` : ''}`} className="no-drag flex size-8 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><Search size={18} strokeWidth={1.8} /></button>
       </div>
       <button onClick={() => newChat()} className="mb-1 mt-1.5 flex w-full items-center gap-2 py-[5px] pl-[18px] pr-4 text-[14px] text-fg-bright hover:bg-bg-hover"><SquarePen size={15} /> New chat</button>
@@ -40,7 +40,7 @@ export function Sidebar() {
         )}
       </div>
       <div className="flex shrink-0 items-center px-3 pb-3 pt-1.5">
-        <Menu beside animate="bottom" items={[{ label: 'Settings', icon: <Settings size={14} />, hint: shortcuts.settings[0] && showCombo(shortcuts.settings[0]), onSelect: () => openSettings() }]}
+        <Menu beside animate="bottom" items={[{ label: 'Settings', icon: <Settings size={14} />, hint: shortcuts.settings[0] && showCombo(shortcuts.settings[0]), onSelect: () => openSettings() }, 'separator', { label: 'Quit', icon: <LogOut size={14} />, onSelect: () => window.orc.window.quit() }]}
           trigger={(open) => <button title="Settings" className={`flex size-8 items-center justify-center rounded-md hover:bg-bg-hover hover:text-fg-bright ${open ? 'bg-bg-active text-fg-bright' : 'text-fg-2'}`}><Settings size={18} strokeWidth={1.8} /></button>} />
       </div>
     </aside>

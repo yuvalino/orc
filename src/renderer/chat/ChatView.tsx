@@ -58,13 +58,14 @@ export function ChatView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {window.orc.platform !== 'darwin' && <div className="flex h-[46px] shrink-0 items-center gap-2 border-b border-line px-4"><ChatHeader /></div>} {/* on macOS it is part of the title bar */}
+      {window.orc.platform !== 'darwin' && session && <div data-testid="chat-header" className="flex h-[46px] shrink-0 items-center gap-2 border-b border-line px-4"><ChatHeader /></div>} {/* only for an open chat; on macOS it is part of the title bar */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         {session && (
-          <div key={session.id} ref={ref} onScroll={onScroll} style={{ paddingInline: 'clamp(16px, 8%, 100px)' }} className="fade-in min-h-0 flex-1 overflow-y-auto py-3">
+          <div key={session.id} ref={ref} onScroll={onScroll} style={{ paddingInline: 'clamp(16px, 8%, 100px)' }} className="fade-in min-h-0 flex-1 overflow-y-auto pb-3 pt-5">
             <Turns items={items ?? []} running={!!status && status.state !== 'idle' && status.state !== 'closed'} />
           </div>
         )}
+        {session && <div data-testid="header-shade" aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-6" style={{ background: 'linear-gradient(var(--color-bg), transparent)' }} />} {/* the header's shadow, below its line: the conversation fades out under it */}
         {(!session || leaving) && (
           <div data-testid="empty-chat" className={`flex flex-1 select-none flex-col items-center justify-center gap-2 text-fg-3 ${leaving ? 'fade-out pointer-events-none absolute inset-0 bg-bg' : ''}`}>
             <div className="logo-glow mb-3"><span className="logo-sway flex"><img src={logo} alt="" className="logo-float size-[104px]" draggable={false} /></span></div>
@@ -77,19 +78,20 @@ export function ChatView() {
   )
 }
 
-/** The open chat's title on the left, its usage and Subagents button on the right. */
+/** The open chat's title on the left, its usage and Subagents button on the right; nothing for a new chat. */
 export function ChatHeader() {
   const { session } = useActive()
   const status = useStore((s) => (session ? s.status[session.id] : undefined))
+  if (!session) return null
   return (
     <>
-      <span className="flex min-w-0 items-center gap-2 text-[14px] font-medium text-fg-bright">
+      <span className="flex min-w-0 select-none items-center gap-2 text-[14px] font-medium text-fg-bright">
         <Folder size={18} className="shrink-0 text-fg-2" />
-        <span className="truncate">{session ? sessionTitle(session) : <span className="text-fg-2">New session</span>}</span>
+        <span className="truncate">{sessionTitle(session)}</span>
       </span>
       <div className="no-drag ml-auto flex shrink-0 items-center gap-2">
         {status?.rateLimit && <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[11px] text-warn">Usage {Math.round((status.rateLimit.utilization ?? 0) * 100)}%</span>}
-        {session && <SubagentsButton />}
+        <SubagentsButton />
       </div>
     </>
   )
@@ -98,18 +100,24 @@ export function ChatHeader() {
 /** The transcript body; also renders a subagent's thread in the panel. `running` applies to the last turn. */
 export function Turns({ items, running }: { items: Item[]; running: boolean }) {
   const turns = groupTurns(items)
-  return <div className="flex flex-col gap-3.5">{turns.map((t, i) => <TurnView key={t.user?.id ?? i} turn={t} running={running && i === turns.length - 1 && !t.end} />)}</div>
+  const latest = turns.flatMap((t) => t.final).filter((i) => i.kind === 'text').at(-1)?.id // the one reply whose buttons always show
+  return <div className="flex flex-col gap-3.5">{turns.map((t, i) => <TurnView key={t.user?.id ?? i} turn={t} latest={latest} running={running && i === turns.length - 1 && !t.end} />)}</div>
 }
 
-function TurnView({ turn, running }: { turn: Turn; running: boolean }) {
+function TurnView({ turn, latest, running }: { turn: Turn; latest?: string; running: boolean }) {
   return (
     <div className="flex flex-col gap-3.5">
-      {turn.user && <div className="mr-2.5 max-w-[65%] self-end break-words rounded-3xl bg-bubble px-5 py-2.5 text-white whitespace-pre-wrap">{turn.user.text}</div>}
+      {turn.user && (
+        <div className="group mr-2.5 flex max-w-[65%] flex-col items-end self-end">
+          <div className="break-words rounded-3xl bg-bubble px-5 py-2.5 text-white whitespace-pre-wrap">{turn.user.text}</div>
+          <Actions text={turn.user.text} at={turn.user.at} side="right" />
+        </div>
+      )}
       {(turn.work.length > 0 || (running && turn.final.length === 0)) && <WorkSection items={turn.work} running={running && turn.final.length === 0} durationMs={turn.end?.durationMs} />} {/* "Working…" from the moment the prompt is sent */}
       {turn.final.map((it) => it.kind === 'note' ? <WorkItem key={it.id} item={it} /> : it.kind === 'text' && (
         <div key={it.id} className="group">
           <div className={it.streaming ? 'caret' : ''}><Markdown text={it.text} /></div>
-          {!it.streaming && <Actions text={it.text} at={it.at} />}
+          <Actions text={it.text} at={it.at} pinned={it.id === latest} off={it.streaming} />
         </div>
       ))}
       {turn.end?.stopped && <div className="text-[12.5px] text-fg-3">Stopped</div>}
@@ -124,15 +132,22 @@ function sentAt(at: number): string {
   return days <= 0 ? time : days < 7 ? `${d.toLocaleDateString([], { weekday: 'long' })} ${time}` : `${d.toLocaleDateString()} ${time}`
 }
 
-/** The buttons under a reply stay visible; the time it was sent shows beside them on hover. */
-function Actions({ text, at }: { text: string; at?: number }) {
+/**
+ * A message's button row, its space always kept so nothing shifts. The buttons show on hover, except under the latest reply
+ * (`pinned`) where they stay; the time it was sent shows on hover, beside the buttons (on their left for your own messages,
+ * `side` right). `off`: still streaming, nothing to act on yet.
+ */
+function Actions({ text, at, pinned, off, side = 'left' }: { text: string; at?: number; pinned?: boolean; off?: boolean; side?: 'left' | 'right' }) {
   const [copied, setCopied] = useState(false)
   const offset = useStore((s) => s.transport?.clockOffset ?? 0) // `at` is the engine's clock, which may be another machine's
   const copy = () => navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
+  const reveal = 'opacity-0 transition-opacity group-hover:opacity-100'
+  const time = at ? <span className={`select-none text-[12px] text-fg-3 ${reveal} ${side === 'right' ? 'mr-1.5' : 'ml-1.5'}`}>{sentAt(at - offset)}</span> : null
   return (
-    <div className="mt-1.5 flex items-center gap-0.5">
-      <button className="flex size-7 items-center justify-center rounded-md text-fg-3 hover:bg-bg-hover hover:text-fg-2" onClick={copy} title="Copy">{copied ? <Check size={16} /> : <Copy size={16} />}</button>
-      {at && <span className="ml-1.5 text-[12px] text-fg-3 opacity-0 group-hover:opacity-100">{sentAt(at - offset)}</span>}
+    <div data-actions className={`mt-1.5 flex h-7 items-center gap-0.5 ${off ? 'invisible' : ''}`}>
+      {side === 'right' && time}
+      <button className={`flex size-7 items-center justify-center rounded-md text-fg-3 hover:bg-bg-hover hover:text-fg-2 ${pinned ? '' : reveal}`} onClick={copy} title="Copy">{copied ? <Check size={16} /> : <Copy size={16} />}</button>
+      {side === 'left' && time}
     </div>
   )
 }

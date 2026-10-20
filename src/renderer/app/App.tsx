@@ -34,7 +34,7 @@ export default function App() {
     window.addEventListener('keydown', onKey); window.addEventListener('mouseup', onMouse)
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mouseup', onMouse) }
   }, [])
-  useEffect(() => { document.title = transport?.kind === 'remote' ? `orc — ${transport.host}` : 'orc' }, [transport?.host])
+  useEffect(() => { document.title = transport?.kind === 'remote' ? `Orc — ${transport.host}` : 'Orc' }, [transport?.host])
   if (!transport || transport.phase !== 'ready') return <div className="flex h-full">{transport && <Connect t={transport} />}<Palette /></div> // the palette still signs in or opens another host
   return (
     <div className="flex h-full flex-col">

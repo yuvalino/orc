@@ -40,7 +40,7 @@ export function Connect({ t }: { t: TransportState }) {
       case 'error': return { title: 'Could not connect', text: t.error ?? '', actions: <Btn primary onClick={() => tr.reconnect()}>Retry</Btn> }
       case 'disconnected': return { title: `Disconnected from ${t.host}`, text: t.error ? `${t.error}\nReconnecting…` : 'Reconnecting…', actions: <Btn onClick={() => tr.reconnect()}>Reconnect now</Btn> }
       case 'prompt': return t.notice ? { title: `${t.host} is waiting`, text: t.prompt ?? '', actions: null } : { title: `${t.host} is asking`, text: '', actions: <Prompt prompt={t.prompt ?? ''} /> }
-      case 'installing': return { title: `Installing orc server on ${t.host}`, text: `150 MB download, one time — ${t.install}…`, actions: null }
+      case 'installing': return { title: `Installing Orc server on ${t.host}`, text: `150 MB download, one time — ${t.install}…`, actions: null }
       default: return { title: t.kind === 'remote' ? `Connecting to ${t.host}…` : 'Starting…', text: '', actions: null }
     }
   })()

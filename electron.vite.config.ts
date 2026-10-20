@@ -22,6 +22,7 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react(), tailwindcss()],
+    define: { __ORC_VERSION__: JSON.stringify(version) }, // shown in About Orc
     resolve: { alias: { '@': resolve('src/renderer'), ...shared } }
   }
 })

@@ -48,7 +48,7 @@ test('first connect installs orc-server on the host: checksum refusal, the ~/.or
 
   body = good
   await page.getByRole('button', { name: 'Retry' }).click()
-  await expect(page.getByText(/Installing orc server on fakehost/)).toBeVisible()
+  await expect(page.getByText(/Installing Orc server on fakehost/)).toBeVisible()
   await shot(page, 'install')
   await expect(page.locator('textarea')).toBeVisible({ timeout: 15_000 })
   expect(readdirSync(join(home, '.orc', version)).sort()).toEqual(['claude', 'orc-server'])

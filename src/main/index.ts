@@ -8,6 +8,7 @@ import { Remote } from './remote'
 import { remoteHost, shellStore } from './shell'
 import { boot } from './transport'
 
+app.setName('Orc') // shown in menus and dialogs; package.json keeps the lowercase package name
 // One instance per target per machine: the single-instance lock is keyed on userData, so each remote host gets its own,
 // and tests/dev instances get theirs (ORC_USER_DATA_DIR, defaulting to the engine's ORC_DATA_DIR) and never collide.
 const userData = process.env.ORC_USER_DATA_DIR || process.env.ORC_DATA_DIR || (remoteHost && join(app.getPath('userData'), `remote-${remoteHost.replace(/[^\w.-]/g, '_')}`))
@@ -34,7 +35,7 @@ function createWindow(): void {
     ...saved,
     minWidth: 980, // both side panes at their minimum (220 + 280) still leave the composer room for its bottom row
     minHeight: 560,
-    title: remoteHost ? `orc — ${remoteHost}` : 'orc',
+    title: remoteHost ? `Orc — ${remoteHost}` : 'Orc',
     backgroundColor: '#181818',
     ...(process.platform !== 'darwin' && existsSync(icon) ? { icon } : {}), // the window's own icon on Windows and Linux in development
     ...(process.platform !== 'darwin' ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#252526', symbolColor: '#a0a0a0', height: 38 } } : { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 14, y: 16 } }), // see TitleBar.tsx
@@ -50,27 +51,54 @@ function createWindow(): void {
   else win.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
+/** Help → About Orc: a small floating window over the current one, frameless so it can wear the app's theme (About.tsx). */
+let aboutWin: BrowserWindow | null = null
+function openAbout(): void {
+  if (aboutWin) return aboutWin.focus()
+  const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const size = 340, at = parent?.getBounds() // centered on the window it's about, not on the display
+  aboutWin = new BrowserWindow({
+    parent, modal: process.platform !== 'darwin', // a sheet on macOS would look nothing like a dialog
+    width: size, height: size, ...(at ? { x: Math.round(at.x + (at.width - size) / 2), y: Math.round(at.y + (at.height - size) / 2) } : {}), useContentSize: true, resizable: false, minimizable: false, maximizable: false, fullscreenable: false,
+    frame: false, title: 'About Orc', backgroundColor: '#303030', show: false,
+    webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: false }
+  })
+  aboutWin.once('ready-to-show', () => aboutWin?.show())
+  aboutWin.on('closed', () => { aboutWin = null })
+  aboutWin.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
+  if (process.env.ELECTRON_RENDERER_URL) aboutWin.loadURL(`${process.env.ELECTRON_RENDERER_URL}#about`)
+  else aboutWin.loadFile(join(__dirname, '../renderer/index.html'), { hash: 'about' })
+}
+
 /**
  * Off macOS the window has no native menu bar: the title bar draws this menu itself (see MenuBar.tsx) and runs its items here.
  * The user picks the app's shortcuts (Settings → Keyboard shortcuts); the window handles those keys, so these items only show them.
  */
 let shortcuts: Record<string, string | undefined> = { newChat: 'Mod+N', newWindow: 'Mod+Shift+N', settings: 'Mod+,' }
 const shown = (k: string) => (shortcuts[k] ? { accelerator: shortcuts[k]!.replace('Mod', 'CmdOrCtrl'), registerAccelerator: false } : {})
-const toFocused = (channel: 'menu:new-chat' | 'menu:settings') => () => BrowserWindow.getFocusedWindow()?.webContents.send(channel) // the focused window only
+const toFocused = (channel: 'menu:new-chat' | 'menu:settings' | 'menu:open-folder') => () => BrowserWindow.getFocusedWindow()?.webContents.send(channel) // the focused window only
 function buildMenu(): void {
   const mac = process.platform === 'darwin'
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(mac ? [{ role: 'appMenu' as const }] : []),
     { label: 'File', submenu: [
-      { label: 'New Chat', ...shown('newChat'), click: toFocused('menu:new-chat') },
       { label: 'New Window', ...shown('newWindow'), click: () => createWindow() },
-      { type: 'separator' }, { label: 'Settings…', ...shown('settings'), click: toFocused('menu:settings') },
-      { type: 'separator' }, { role: 'close' }, ...(mac ? [] : [{ role: 'quit' as const }])
+      { label: 'New Chat', ...shown('newChat'), click: toFocused('menu:new-chat') },
+      { type: 'separator' }, { label: 'Open Folder…', click: toFocused('menu:open-folder') }, // a new project
+      { type: 'separator' }, { role: 'close' },
+      ...(mac ? [] : [{ type: 'separator' as const }, { role: 'quit' as const, label: 'Quit' }]) // macOS quits from the app menu
     ] },
-    { label: 'Edit', role: 'editMenu' },
+    { label: 'Edit', submenu: [
+      { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+      { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'delete' }, { type: 'separator' }, { role: 'selectAll' },
+      { type: 'separator' }, { label: 'Settings…', ...shown('settings'), click: toFocused('menu:settings') }
+    ] },
     { label: 'View', role: 'viewMenu' },
-    { label: 'Window', role: 'windowMenu' },
-    { label: 'Help', role: 'help', submenu: [{ label: 'Claude Code docs', click: () => shell.openExternal('https://code.claude.com/docs') }] }
+    ...(mac ? [{ label: 'Window', role: 'windowMenu' as const }] : []), // off macOS the title bar has no use for it
+    { label: 'Help', role: 'help', submenu: [
+      { label: 'Claude Code docs', click: () => shell.openExternal('https://code.claude.com/docs') },
+      { type: 'separator' }, { label: 'About Orc', click: () => openAbout() }
+    ] }
   ]))
 }
 // Shortcuts the roles bring along, which their items don't expose.
@@ -87,6 +115,7 @@ ipcMain.handle('menu.run', (e, menu: string, index: number) => { // index among 
 })
 ipcMain.handle('menu.shortcuts', (_e, map: typeof shortcuts) => { shortcuts = map; buildMenu() })
 ipcMain.handle('window.open', () => createWindow())
+ipcMain.handle('window.quit', () => app.quit())
 
 app.whenReady().then(() => {
   if (process.platform === 'darwin' && !app.isPackaged && existsSync(icon)) app.dock?.setIcon(icon)
