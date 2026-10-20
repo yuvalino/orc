@@ -83,6 +83,9 @@ test('sidebar: arrow cursor, folding sections and projects, new-chat buttons, fo
   await send(page, 'plan something long')
   const working = (l: typeof project) => l.getByTitle('Working')
   await expect(working(alphaUnder)).toBeVisible()
+  await expect(page.locator('main .animate-spin')).toHaveCount(0) // spinners are for the sidebar: the conversation shimmers instead
+  const status = page.locator('main button .shimmer').first()
+  await expect(status).toHaveText(/^(Thinking…|Working for \d+s)$/)
   await expect(working(project)).toHaveCount(0)
   await project.click()
   await page.mouse.move(700, 300) // hovering a row swaps its status for its buttons

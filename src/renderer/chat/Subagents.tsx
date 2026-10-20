@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { SlidePane } from '../lib/SlidePane'
-import { Check, ChevronLeft, ListTodo, Loader2, X } from 'lucide-react'
+import { Check, ChevronLeft, ListTodo, X } from 'lucide-react'
 import type { Item } from '@shared/types'
 import { Resizer } from '../lib/Resizer'
 import { PANE, useActive, useStore } from '../stores/store'
@@ -96,14 +96,14 @@ function Thread({ tool, items, back, stop }: { tool: Tool; items: Item[]; back: 
         <button onClick={back} className="text-fg-2 hover:text-fg-bright" title="Back"><ChevronLeft size={16} /></button>
         <Logo tool={tool} /><span className="truncate text-[14px] font-semibold text-fg-bright">{taskName(tool)}</span>
         <span className="ml-auto flex shrink-0 items-center gap-2 text-[12px] text-fg-2">
-          {active ? <><Loader2 size={12} className="animate-spin" />{elapsed(tool.task?.startedAt, now)}<StopButton tool={tool} stop={stop} /></> : modelName(tool.task?.model)}
+          {active ? <><span className="shimmer">Working for {elapsed(tool.task?.startedAt, now)}</span><StopButton tool={tool} stop={stop} /></> : modelName(tool.task?.model)}
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 text-[13.5px]">
         {shell ? (
           <>
             <div className="flex items-center gap-2 text-[13px] text-fg-2">
-              {active ? <><Loader2 size={13} className="animate-spin" /> Running in the background</> : tool.task?.status === 'completed' ? <><Check size={13} className="text-ok" /> Finished</> : <><X size={13} className="text-bad" /> {tool.task?.status ?? 'stopped'}</>}
+              {active ? <span className="shimmer">Running in the background</span> : tool.task?.status === 'completed' ? <><Check size={13} className="text-ok" /> Finished</> : <><X size={13} className="text-bad" /> {tool.task?.status ?? 'stopped'}</>}
             </div>
             <pre className="mt-2 max-h-[70vh] overflow-auto whitespace-pre-wrap rounded-lg bg-[#141414] p-3 font-mono text-[12px] text-fg-sub">$ {(tool.input as { command?: string }).command}{tool.result?.text ? `\n\n${tool.result.text}` : ''}</pre>
           </>

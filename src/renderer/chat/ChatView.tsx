@@ -1,8 +1,8 @@
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Bot, Check, ChevronRight, Copy, FileText, Folder, Globe, Hand, ListChecks, Loader2, Pencil, Search, Terminal, Wrench, X } from 'lucide-react'
+import { ArrowDown, Bot, Check, ChevronRight, Copy, FileText, Folder, Globe, Hand, ListChecks, Pencil, Search, Terminal, Wrench, X } from 'lucide-react'
 import type { Item } from '@shared/types'
 import { AskCard } from './asks'
-import { Markdown } from './Markdown'
+import { Markdown, StreamingMarkdown } from './Markdown'
 import { LaunchRow, SubagentsButton, isLaunch, type Tool } from './agents'
 import { sessionTitle, useActive, useStore } from '../stores/store'
 import logo from '../assets/logo.png'
@@ -36,6 +36,9 @@ const PROJECT_GREETINGS = [(n: string) => `Building ${n}`, (n: string) => `${n} 
 const pickOne = <T,>(list: T[]): T => list[Math.floor(Math.random() * list.length)]
 export const greetingFor = (project: { name: string | null; path: string } | null) => project ? pickOne(PROJECT_GREETINGS)(project.name ?? project.path.split(/[\\/]/).pop() ?? '') : pickOne(GREETINGS)
 
+/** How far below the top a sent prompt settles: the last ~2.5 lines of the reply before it, and the header's shade, stay in view. */
+const PIN_TOP = 80
+
 export function ChatView() {
   const { session, project } = useActive()
   const items = useStore((s) => (session ? s.transcripts[session.id] : undefined))
@@ -44,8 +47,8 @@ export function ChatView() {
   const deferred = useDeferredValue(useMemo(() => ({ id: session?.id, items }), [session?.id, items]))
   const shownItems = deferred.id === session?.id ? deferred.items : undefined
   const status = useStore((s) => (session ? s.status[session.id] : undefined))
+  const running = !!status && status.state !== 'idle' && status.state !== 'closed'
   const ref = useRef<HTMLDivElement>(null)
-  const stick = useRef(true)
   const [leaving, setLeaving] = useState(false) // the empty screen fading out over the first turn
   const hadSession = useRef(!!session)
   // What the empty screen shows, kept as it was while it fades out (the chat it gave way to may be in another project).
@@ -73,9 +76,49 @@ export function ChatView() {
   }, [session?.id])
   const fading = !!session && (leaving || !hadSession.current) // from the very render the chat appears in, not an effect later
 
-  useEffect(() => { stick.current = true }, [session?.id]) // a freshly opened chat starts at its latest message
-  useEffect(() => { if (stick.current) ref.current?.scrollTo({ top: ref.current.scrollHeight }) }, [shownItems])
-  const onScroll = () => { const el = ref.current!; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60 }
+  // The view never chases new text: a chat opens at its latest message, a prompt you send scrolls up (below), and anything that
+  // lands out of sight below is announced by the floating button instead.
+  const toBottom = (smooth?: boolean) => { ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }); if (!smooth) measureBelow() }
+  // The button is for content you haven't seen: below the view and past the furthest end you've seen (or that was laid out for
+  // you). Reaching the end dismisses it; scrolling back up doesn't bring it back, only more content arriving does.
+  const [below, setBelow] = useState(false)
+  const seenHeight = useRef(0)
+  const measureBelow = () => {
+    const el = ref.current
+    if (!el) return setBelow(false)
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (gap <= 24) seenHeight.current = el.scrollHeight
+    setBelow(gap > 24 && el.scrollHeight > seenHeight.current + 24)
+  }
+  useEffect(measureBelow, [shownItems])
+
+  // A prompt you send scrolls up to near the top, leaving the last lines of the reply before it in view, with room below for
+  // the answer: its turn is at least a view tall. Prompts already there when a chat loads don't count.
+  const [pinned, setPinned] = useState<string | null>(null)
+  const [viewHeight, setViewHeight] = useState(0)
+  const seen = useRef<{ id?: string; users: Set<string> | null }>({ users: null })
+  useLayoutEffect(() => {
+    const users = shownItems?.filter((i) => i.kind === 'user' && !i.parent).map((i) => i.id)
+    if (seen.current.id !== session?.id) { seen.current = { id: session?.id, users: users ? new Set(users) : null }; seenHeight.current = 0; setPinned(null); if (users) toBottom(); return }
+    if (!users) return
+    if (!seen.current.users) { seen.current.users = new Set(users); toBottom(); return } // the transcript just loaded: open at its end
+    const added = users.filter((u) => !seen.current.users!.has(u)).at(-1)
+    users.forEach((u) => seen.current.users!.add(u))
+    if (added) { if (ref.current) seenHeight.current = ref.current.scrollHeight; setPinned(added) } // your own prompt isn't news either
+  }, [session?.id, shownItems])
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const ro = new ResizeObserver(() => { setViewHeight(el.clientHeight); measureBelow() })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [session?.id])
+  useLayoutEffect(() => {
+    const el = ref.current, turn = pinned && el?.querySelector(`[data-turn="${pinned}"]`)
+    if (!el || !turn) return
+    seenHeight.current = el.scrollHeight // the room laid out under the prompt isn't news: only the reply outgrowing it is
+    el.scrollTo({ top: el.scrollTop + turn.getBoundingClientRect().top - el.getBoundingClientRect().top - PIN_TOP, behavior: 'smooth' })
+  }, [pinned])
 
   const emptyScreen = (
     <>
@@ -89,11 +132,12 @@ export function ChatView() {
       {window.orc.platform !== 'darwin' && session && <div data-testid="chat-header" className="flex h-[46px] shrink-0 items-center gap-2 border-b border-line px-4"><ChatHeader /></div>} {/* only for an open chat; on macOS it is part of the title bar */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         {session && (
-          <div key={session.id} ref={ref} onScroll={onScroll} style={{ paddingInline: 'clamp(16px, 8%, 100px)' }} className="fade-in min-h-0 flex-1 overflow-y-auto pb-3 pt-5">
-            <Turns items={shownItems ?? []} running={!!status && status.state !== 'idle' && status.state !== 'closed'} />
+          <div key={session.id} ref={ref} onScroll={measureBelow} style={{ paddingInline: 'clamp(16px, 8%, 100px)' }} className="fade-in min-h-0 flex-1 overflow-y-auto pb-3 pt-5">
+            <Turns items={shownItems ?? []} running={running} pinned={pinned && viewHeight ? { id: pinned, minHeight: viewHeight - PIN_TOP - 12 } : undefined} />
           </div>
         )}
         {session && <div data-testid="header-shade" aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-6" style={{ background: 'linear-gradient(var(--color-bg), transparent)' }} />} {/* the header's shadow, below its line: the conversation fades out under it */}
+        {session && below && <MoreBelow typing={running} onClick={() => toBottom(true)} />}
         {!session && <div ref={slot} className="flex-1" />}
       </div>
       {(!session || fading) && (
@@ -104,15 +148,30 @@ export function ChatView() {
   )
 }
 
+/**
+ * Floats just above the prompt while there's more under the view: three dots bouncing one after another while the turn is still
+ * adding to it, a down arrow once it's done. Either scrolls to the end.
+ */
+function MoreBelow({ typing, onClick }: { typing: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} title="Scroll to the end" data-testid="more-below" data-typing={typing || undefined}
+      className="fade-in absolute bottom-3 left-1/2 z-10 -ml-[18px] flex size-9 items-center justify-center rounded-full border border-line-strong bg-[#2b2b2b]/80 text-fg-sub shadow-lg backdrop-blur-sm hover:text-fg-bright">
+      {typing
+        ? <span className="flex items-center gap-[3px]">{[0, 1, 2].map((i) => <span key={i} className="typing-dot size-[5px] rounded-full bg-current" style={{ animationDelay: `${i * 0.15}s` }} />)}</span>
+        : <ArrowDown size={16} />}
+    </button>
+  )
+}
+
 /** The open chat's title on the left, its usage and Subagents button on the right; nothing for a new chat. */
 export function ChatHeader() {
-  const { session } = useActive()
+  const { session, project } = useActive()
   const status = useStore((s) => (session ? s.status[session.id] : undefined))
   if (!session) return null
   return (
     <>
       <span className="flex min-w-0 select-none items-center gap-2 text-[14px] font-medium text-fg-bright">
-        <Folder size={18} className="shrink-0 text-fg-2" />
+        {session.projectId && project && <span title={project.name ?? project.path.split(/[\\/]/).pop()} className="flex shrink-0"><Folder size={18} className="text-fg-2" /></span>} {/* only for a chat in a project, named on hover */}
         <span className="truncate">{sessionTitle(session)}</span>
       </span>
       <div className="no-drag ml-auto flex shrink-0 items-center gap-2">
@@ -124,25 +183,29 @@ export function ChatHeader() {
 }
 
 /** The transcript body; also renders a subagent's thread in the panel. `running` applies to the last turn. */
-export function Turns({ items, running }: { items: Item[]; running: boolean }) {
+export function Turns({ items, running, pinned }: { items: Item[]; running: boolean; pinned?: { id: string; minHeight: number } }) {
   const turns = groupTurns(items)
   const latest = turns.flatMap((t) => t.final).filter((i) => i.kind === 'text').at(-1)?.id // the one reply whose buttons always show
-  return <div className="flex flex-col gap-3.5">{turns.map((t, i) => <TurnView key={t.user?.id ?? i} turn={t} latest={latest} running={running && i === turns.length - 1 && !t.end} />)}</div>
-}
-
-function TurnView({ turn, latest, running }: { turn: Turn; latest?: string; running: boolean }) {
   return (
     <div className="flex flex-col gap-3.5">
+      {turns.map((t, i) => <TurnView key={t.user?.id ?? i} turn={t} latest={latest} running={running && i === turns.length - 1 && !t.end} minHeight={pinned && t.user?.id === pinned.id ? pinned.minHeight : undefined} />)}
+    </div>
+  )
+}
+
+function TurnView({ turn, latest, running, minHeight }: { turn: Turn; latest?: string; running: boolean; minHeight?: number }) {
+  return (
+    <div data-turn={turn.user?.id} style={{ minHeight }} className="flex flex-col gap-3.5">
       {turn.user && (
         <div className="group mr-2.5 flex max-w-[65%] flex-col items-end self-end">
           <div className="break-words rounded-3xl bg-bubble px-5 py-2.5 text-white whitespace-pre-wrap">{turn.user.text}</div>
           <Actions text={turn.user.text} at={turn.user.at} side="right" />
         </div>
       )}
-      {(turn.work.length > 0 || (running && turn.final.length === 0)) && <WorkSection items={turn.work} running={running && turn.final.length === 0} durationMs={turn.end?.durationMs} />} {/* "Working…" from the moment the prompt is sent */}
+      {(turn.work.length > 0 || (running && turn.final.length === 0)) && <WorkSection items={turn.work} running={running && turn.final.length === 0} startedAt={turn.user?.at} durationMs={turn.end?.durationMs} />} {/* "Working…" from the moment the prompt is sent */}
       {turn.final.map((it) => it.kind === 'note' ? <WorkItem key={it.id} item={it} /> : it.kind === 'text' && (
         <div key={it.id} className="group">
-          <div className={it.streaming ? 'caret' : ''}><Markdown text={it.text} /></div>
+          <StreamingMarkdown text={it.text} streaming={it.streaming} />
           <Actions text={it.text} at={it.at} pinned={it.id === latest} off={it.streaming} />
         </div>
       ))}
@@ -178,19 +241,35 @@ function Actions({ text, at, pinned, off, side = 'left' }: { text: string; at?: 
   )
 }
 
-function WorkSection({ items, running, durationMs }: { items: Item[]; running: boolean; durationMs?: number }) {
+/** "12s", "1m 05s". */
+const forTime = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` }
+
+/** The engine's clock (which may be another machine's), ticking each second while `on`. */
+function useEngineNow(on: boolean) {
+  const offset = useStore((s) => s.transport?.clockOffset ?? 0)
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => { if (!on) return; setNow(Date.now()); const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [on])
+  return now + offset
+}
+
+/**
+ * A turn's work, folded under one line. While it runs: "Thinking…" (until something but thinking happens; after 10s it says for how
+ * long), then "Working for 12s", shimmering. Done: "Worked for 17s".
+ */
+function WorkSection({ items, running, startedAt, durationMs }: { items: Item[]; running: boolean; startedAt?: number; durationMs?: number }) {
   const [open, setOpen] = useState(false)
   const pendingAsk = items.some((i) => i.kind === 'ask' && !i.answer && !i.cancelled)
   useEffect(() => { if (pendingAsk) setOpen(true) }, [pendingAsk]) // asks pop the section open; it stays open after answering
-  const last = [...items].reverse().find((i) => i.kind === 'tool') as Tool | undefined
-  const lastText = last ? toolLabel(last).text.trim() : ''
-  const live = lastText.includes(' ') ? lastText : last?.name // input is still streaming: fall back to the tool name
-  const label = running ? `Working… ${live ? '· ' + live : ''}` : durationMs ? `Worked for ${durationMs < 1000 ? '<1s' : Math.round(durationMs / 1000) + 's'}` : 'Worked'
+  const now = useEngineNow(running)
+  const took = startedAt ? now - startedAt : 0
+  const thinking = items.every((i) => i.kind === 'thinking') // nothing yet but (maybe) thinking
+  const label = running ? (thinking ? (took < 10_000 ? 'Thinking…' : `Thinking for ${forTime(took)}`) : `Working for ${forTime(took)}`)
+    : durationMs ? `Worked for ${durationMs < 1000 ? '<1s' : Math.round(durationMs / 1000) + 's'}` : 'Worked'
   const launches = items.filter((i): i is Tool => i.kind === 'tool' && isLaunch(i))
   return (
     <div className="border-t border-line pt-2">
       <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-1 pb-1 text-[13px] text-fg-2 hover:text-fg">
-        {running && <Loader2 size={13} className="animate-spin" />}<span className="truncate">{label}</span>
+        <span className={`truncate ${running ? 'shimmer' : ''}`}>{label}</span>
         <ChevronRight size={13} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
       </button>
       {open
@@ -255,14 +334,14 @@ function ToolRow({ tool }: { tool: Tool }) {
   const { icon: Icon, text } = toolLabel(tool)
   const i = tool.input as Record<string, string>
   const d = (tool.result?.data ?? {}) as ResultData
-  const Status = { running: <Loader2 size={13} className="animate-spin text-fg-3" />, awaiting_approval: <Hand size={13} className="text-warn" />, done: <Check size={13} className="text-ok" />, error: <X size={13} className="text-bad" />, denied: <X size={13} className="text-fg-3" />, interrupted: <X size={13} className="text-fg-3" /> }[tool.status]
+  const Status = { running: null, awaiting_approval: <Hand size={13} className="text-warn" />, done: <Check size={13} className="text-ok" />, error: <X size={13} className="text-bad" />, denied: <X size={13} className="text-fg-3" />, interrupted: <X size={13} className="text-fg-3" /> }[tool.status]
   const diffLines = d.structuredPatch ? d.structuredPatch.flatMap((h) => h.lines)
     : tool.name === 'Edit' || tool.name === 'MultiEdit' ? [...(i.old_string ?? '').split('\n').map((l) => '-' + l), ...(i.new_string ?? '').split('\n').map((l) => '+' + l)]
     : tool.name === 'Write' ? (i.content ?? '').split('\n').map((l) => '+' + l) : null
   const files = d.filenames ?? []
   const rich = !!(diffLines || files.length || d.bashEditDiff?.files.length) // structured body replaces the raw result text
   return (
-    <Collapsible head={<><Icon size={14} className="shrink-0 text-fg-2" /><span className="truncate font-mono text-[12.5px]">{text}</span><span className="ml-auto">{Status}</span></>}>
+    <Collapsible head={<><Icon size={14} className="shrink-0 text-fg-2" /><span className={`truncate font-mono text-[12.5px] ${tool.status === 'running' ? 'shimmer' : ''}`}>{text}</span><span className="ml-auto">{Status}</span></>}>
       {diffLines && <Diff lines={diffLines} />}
       {files.length > 0 && <pre className="max-h-64 overflow-auto font-mono text-[12px] text-fg-2">{files.join('\n')}</pre>}
       {tool.result?.text && (!rich || tool.result.isError) && <pre className={`max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[12px] ${tool.result.isError ? 'text-bad' : 'text-fg-2'}`}>{tool.result.text.slice(0, 4000)}</pre>}

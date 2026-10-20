@@ -63,6 +63,9 @@ test('side panes resize within limits, Ctrl+P searches, bypass is orange, replie
   await expect(page.locator('[title="Stop (Esc)"]')).toHaveCount(0)
   await send(page, 'hello')
   await expect(page.locator('[title="Stop (Esc)"]')).toHaveCount(0) // the second turn is done
+  // The prompt just sent scrolled up near the top, the end of the reply before it still in view above.
+  const pinnedAt = () => page.locator('.bg-bubble').last().evaluate((b) => Math.round(b.getBoundingClientRect().top - b.closest('.overflow-y-auto')!.getBoundingClientRect().top))
+  await expect.poll(async () => Math.abs((await pinnedAt()) - 80)).toBeLessThanOrEqual(4) // settles ~80px from the top
   const rows = page.locator('[data-actions]'), seen = (l: ReturnType<typeof rows.nth>) => l.evaluate((e) => getComputedStyle(e).opacity)
   await expect(rows).toHaveCount(4) // you, reply, you, reply
   for (const h of await rows.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) expect(h).toBe(28)

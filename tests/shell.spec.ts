@@ -27,6 +27,7 @@ test('empty shell matches the Codex layout', async () => {
   const shade = page.getByTestId('header-shade') // under its line, the conversation fades into the background color
   expect(await shade.evaluate((e) => getComputedStyle(e).backgroundImage)).toMatch(/^linear-gradient\(rgb\(30, 30, 30\), rgba\(0, 0, 0, 0\)\)$/)
   expect(await page.getByTestId('chat-header').evaluate((e) => getComputedStyle(e).borderBottomWidth)).toBe('1px') // the line stays; the fade is beneath it
+  await expect(page.getByTestId('chat-header').locator('svg.lucide-folder')).toHaveCount(0) // no project: no folder icon
   const edge = (await page.getByRole('separator').first().boundingBox())!, top = (await shade.boundingBox())!.y + 3
   expect(await shade.evaluate((e, [x, y]) => { e.style.pointerEvents = 'auto'; const hit = document.elementFromPoint(x, y); e.style.pointerEvents = ''; return !!hit?.closest('[role=separator]') }, [edge.x + edge.width / 2, top])).toBe(true) // the sidebar's edge stays above the fade
   expect(await page.locator('main span.truncate').first().evaluate((e) => getComputedStyle(e).userSelect)).toBe('none') // its title isn't text to select
