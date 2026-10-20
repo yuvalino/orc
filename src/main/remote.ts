@@ -133,7 +133,7 @@ export class Remote {
     } else if ('install' in f) {
       this.set({ phase: 'installing', install: f.install.phase })
     } else if ('error' in f) {
-      if (f.error === 'not-logged-in') this.fail(`Claude isn't signed in on ${this.host}. Sign in for remote hosts (⌘K → Remote sign-in…), or run: ssh -t ${this.host} ${f.claude ?? 'claude'} auth login`)
+      if (f.error === 'not-logged-in') this.fail(`Claude isn't signed in on ${this.host}. Sign in for remote hosts (${process.platform === 'darwin' ? '⌘P' : 'Ctrl+P'} → Remote sign-in…), or run: ssh -t ${this.host} ${f.claude ?? 'claude'} auth login`)
       else if (f.error === 'install-failed' && f.reason === 'windows-shell' && !this.windows) { this.learnWindows(); this.connect(this.takeoverWanted) }
       else if (f.error === 'install-failed') this.fail(INSTALL_FAILED[f.reason ?? ''] ?? `Installing orc-server on ${this.host} failed (${f.reason}).`)
       else this.fail(f.error)

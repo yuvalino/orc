@@ -6,6 +6,7 @@ test('side panes resize within limits, Ctrl+P searches, bypass is orange, replie
   const { page } = c
   const sidebar = page.locator('aside').first(), edge = page.getByRole('separator').first()
 
+  await expect(page.getByRole('button', { name: /^Opus 4.6/ })).toBeVisible() // the composer row has its final buttons: they set how wide the panes may get
   // Drag the sidebar's edge: it follows the pointer, then stops at its maximum and minimum.
   const drag = async (by: number) => { const b = (await edge.boundingBox())!, x = b.x + b.width / 2, y = b.y + 200; await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + by, y, { steps: 4 }); await page.mouse.up() }
   await drag(60)

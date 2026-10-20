@@ -7,7 +7,7 @@ type Listing = { path: string; dirs: string[]; parent: string | null }
 
 const PLACEHOLDER = { chats: 'Search chats', files: 'Search files', hosts: 'user@host', folders: 'Filter folders', signin: 'Paste the output of `claude setup-token`' }
 
-/** ⌘K command palette: chats and actions; files mode inserts a project file into the composer; hosts opens a remote instance; folders picks a project on a remote host; signin stores the Claude token used on remote hosts. */
+/** Command palette (Ctrl/⌘+P): chats and actions; files mode inserts a project file into the composer; hosts opens a remote instance; folders picks a project on a remote host; signin stores the Claude token used on remote hosts. */
 export function Palette() {
   const { palette, closePalette, openPalette, sessions, projects, draftProjectId, activeId, select, newChat, addProject, setDraft, draft } = useStore()
   const [q, setQ] = useState('')

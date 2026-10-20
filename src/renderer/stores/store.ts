@@ -57,6 +57,7 @@ export type SettingsTab = 'general' | 'personalization' | 'shortcuts'
 function loadShortcuts(): Shortcuts {
   const d = defaultShortcuts()
   try { const saved = JSON.parse(localStorage.getItem('orc.shortcuts') ?? '{}'); for (const k of Object.keys(d) as ShortcutAction[]) if (Array.isArray(saved[k])) d[k] = saved[k] } catch { /* defaults */ }
+  if (d.search.join() === 'Mod+P,Mod+K') d.search = ['Mod+P'] // the earlier default, saved untouched: Ctrl+K is no longer one
   return d
 }
 /** The application menu shows each action's first combo beside its item. */

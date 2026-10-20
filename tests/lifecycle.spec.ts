@@ -48,7 +48,7 @@ test('saved transcripts reload, pins, rename, and interrupt', async () => {
   await page.getByText('Renamed chat').first().click()
   await send(page, 'plan something long')
   await expect(page.locator('[title="Stop (Esc)"]')).toBeVisible()
-  await page.keyboard.press('Meta+k')
+  await page.keyboard.press('ControlOrMeta+p')
   await expect(page.getByPlaceholder('Search chats')).toBeVisible()
   await page.getByPlaceholder('Search chats').click() // the window isn't focused under the test runner, so autofocus doesn't apply
   await page.keyboard.press('Escape')
