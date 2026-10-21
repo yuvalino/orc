@@ -10,12 +10,19 @@ import { baseUserData } from './shell'
  */
 const file = () => join(baseUserData, 'token')
 
+/** Linux with no keyring (a bare window manager, CI): Chromium's own fallback, the way Claude Code keeps its credentials there (a 0600 file). */
+function ensureBackend(): void {
+  if (process.platform === 'linux' && !safeStorage.isEncryptionAvailable()) safeStorage.setUsePlainTextEncryption(true)
+}
+
 export function token(): string | undefined {
   if (process.env.ORC_OAUTH_TOKEN) return process.env.ORC_OAUTH_TOKEN // tests
+  ensureBackend()
   try { return existsSync(file()) ? safeStorage.decryptString(readFileSync(file())) : undefined } catch { return undefined }
 }
 
 export function setToken(t: string | null): void {
   if (!t) { rmSync(file(), { force: true }); return }
+  ensureBackend()
   writeFileSync(file(), safeStorage.encryptString(t.trim()), { mode: 0o600 })
 }

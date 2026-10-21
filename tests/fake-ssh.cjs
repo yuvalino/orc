@@ -27,6 +27,7 @@ if (cfg.windows && !command.startsWith('cmd')) die("'sh' is not recognized as an
 // shim Orc preloads into Node programs ssh starts.
 const env = { ...process.env, ...cfg.env }
 delete env.NODE_OPTIONS
+delete env.PSModulePath // PowerShell 7's, which keeps a host's Windows PowerShell from loading its own modules
 let child
 if (cfg.mode === 'runner') {
   child = process.platform === 'win32'

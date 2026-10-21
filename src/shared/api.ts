@@ -11,6 +11,8 @@ export interface PushEvents {
   'transport:state': TransportState
 }
 
+/** The one-time install of orc-server on a host: downloaded there (regular edition) or sent from this app (offline edition). */
+export type InstallPhase = 'downloading' | 'uploading' | 'verifying' | 'unpacking'
 /** How this window reaches its engine, and whether that engine is ours to use. */
 export interface TransportState {
   kind: 'local' | 'remote'
@@ -20,7 +22,7 @@ export interface TransportState {
   by?: { host: string; user: string } // phase taken-over
   prompt?: string // phase prompt: what ssh is asking (password, passphrase, 2FA, host key)
   notice?: boolean // phase prompt: nothing to type, ssh is waiting on something else (a security key touch)
-  install?: 'downloading' | 'verifying' | 'unpacking' // phase installing: the first connect puts orc-server on the host
+  install?: InstallPhase // phase installing: the first connect puts orc-server on the host
   error?: string
   clockOffset: number // server clock minus ours
 }

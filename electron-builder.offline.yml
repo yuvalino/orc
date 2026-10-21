@@ -1,0 +1,12 @@
+# Orc Offline: Orc built with ORC_OFFLINE=1, carrying every host's orc-server bundle (out/server/orc-server-*.tar.gz, from
+# scripts/build-server.mjs) and sending it over ssh, so it never fetches anything. Everything else is electron-builder.yml.
+extends: ./electron-builder.yml
+artifactName: Orc-Offline-${version}-${os}-${arch}.${ext}
+extraResources:
+  - from: out/server
+    to: servers
+    filter: [orc-server-*.tar.gz]
+mac:
+  target: [dmg]
+nsis:
+  artifactName: Orc-Offline-${version}-${os}-${arch}.${ext}

@@ -32,7 +32,7 @@ Use it locally or remotely to view your active projects and sessions from everyw
 ## Quick start
 
 1. Set up [Claude Code](https://code.claude.com/docs) on your machine: sign in with `claude`, or configure it for your API key, cloud provider or model gateway. Orc uses that setup as is.
-2. Download Orc for your platform from the [Releases page](https://github.com/yuvalino/orc/releases):
+2. Download Orc for your platform from the [Releases page](https://github.com/yuvalino/orc/releases). Each comes in two editions: **Orc**, and **Orc Offline** (`Orc-Offline-…`), a larger download that also carries the server for remote hosts, for networks with no internet access.
 
    | Platform | File |
    |---|---|
@@ -85,7 +85,7 @@ Orc's own chat list and preferences are kept apart, in its own data folder.
 <details>
 <summary>Can I use it offline, with a self-hosted model?</summary>
 
-Yes. Point Claude Code at a model endpoint inside your network (`ANTHROPIC_BASE_URL` with `ANTHROPIC_API_KEY`, or an `apiKeyHelper`) and Orc works with no internet access.
+Yes. Point Claude Code at a model endpoint inside your network (`ANTHROPIC_BASE_URL` with `ANTHROPIC_API_KEY`, or an `apiKeyHelper`) and Orc works with no internet access. For remote hosts on such a network, use **Orc Offline**: it sends the host its server over ssh, so nothing is downloaded anywhere.
 
 </details>
 
@@ -95,7 +95,7 @@ Yes. Point Claude Code at a model endpoint inside your network (`ANTHROPIC_BASE_
 Much like VS Code Remote-SSH: the UI stays local and the engine runs on the host. Each host opens in its own window, and you can also launch with `--remote user@host`.
 
 - The connection uses your system `ssh`, so your keys and `~/.ssh/config` apply. Orc asks for passwords and passphrases in the window when needed.
-- On first connect, Orc installs a self-contained `orc-server` into `~/.orc/<version>/` on the host. The host downloads it from this repo's GitHub release (it needs `curl` and access to github.com), and Orc checks it against checksums built into the app.
+- On first connect, Orc installs a self-contained `orc-server` into `~/.orc/<version>/` on the host, checked against checksums built into the app. With **Orc**, the host downloads it from this repo's GitHub release (it needs `curl` and access to github.com). With **Orc Offline**, the app sends it over the ssh connection itself (about 165 MB, once per version).
 - Supported hosts: macOS, Linux with glibc 2.28 or newer, and Windows, on x64 or arm64.
 - If Claude isn't signed in on the host, run `claude setup-token` locally and paste the output into **Remote sign-in…** in the command palette. Orc stores the token encrypted and passes it only to Claude Code on the host.
 

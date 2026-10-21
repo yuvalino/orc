@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { execFileSync } from 'child_process'
 import { createHash } from 'crypto'
-import { chmodSync, copyFileSync, existsSync, mkdtempSync, readdirSync, statSync, writeFileSync } from 'fs'
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs'
 import { createServer } from 'http'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -36,7 +36,7 @@ function bundle(dataDir: string): Buffer {
   return execFileSync(tar, ['czf', '-', srv, claude], { cwd: dir, maxBuffer: 512 * 1024 * 1024 })
 }
 
-test('first connect installs orc-server on the host: checksum refusal, the ~/.orc layout, no second download', async () => {
+test('first connect has the host download orc-server: checksum refusal, the ~/.orc layout, no second download', async () => {
   test.setTimeout(120_000) // the first run on Windows builds orc-server.exe
   const home = mkdtempSync(join(tmpdir(), 'orc-home-')), dataDir = mkdtempSync(join(tmpdir(), 'orc-remote-data-'))
   const good = bundle(dataDir)
@@ -52,11 +52,11 @@ test('first connect installs orc-server on the host: checksum refusal, the ~/.or
   // The host runs the real bootstrap under a temp home: sh on Unix; on Windows cmd, which turns the Unix bootstrap away
   // so Orc switches to the PowerShell one.
   const ssh = fakeSsh(dataDir, { mode: 'runner', windows: win })
-  const c = await launch({ remote: 'fakehost', dataDir, seed: true, waitFor: 'none', env: { ...ssh.env, HOME: home, USERPROFILE: home, ORC_BUNDLES_JSON: manifest } })
+  const c = await launch({ remote: 'fakehost', dataDir, seed: true, waitFor: 'none', env: { ...ssh.env, HOME: home, USERPROFILE: home, ORC_BUNDLES_JSON: manifest, ORC_EDITION: 'regular' } })
   const { page } = c
   await expect(page.getByText(/did not match its checksum/)).toBeVisible({ timeout: 20_000 })
   expect(existsSync(join(home, '.orc', version))).toBe(false) // nothing half-installed
-  expect(readdirSync(join(home, '.orc')).filter((e) => e.startsWith('.tmp.'))).toEqual([]) // staging cleaned up
+  await expect.poll(() => readdirSync(join(home, '.orc')).filter((e) => e.startsWith('.tmp.'))).toEqual([]) // staging cleaned up (just after the error is reported)
 
   body = good
   await page.getByRole('button', { name: 'Retry' }).click()
@@ -75,4 +75,36 @@ test('first connect installs orc-server on the host: checksum refusal, the ~/.or
   expect(hits).toBe(2)
   await c.close()
   http.close()
+})
+
+test('Orc Offline sends orc-server over ssh: nothing is fetched, a corrupt copy is refused, the install is kept', async () => {
+  test.setTimeout(120_000) // the first run on Windows builds orc-server.exe
+  const home = mkdtempSync(join(tmpdir(), 'orc-home-')), dataDir = mkdtempSync(join(tmpdir(), 'orc-remote-data-'))
+  const servers = mkdtempSync(join(tmpdir(), 'orc-servers-')), file = join(servers, `orc-server-${process.platform}-${process.arch}.tar.gz`)
+  const good = bundle(dataDir)
+  const bad = Buffer.from(good); bad[100] ^= 0xff
+  writeFileSync(file, bad) // corrupted first, as if damaged on the way
+  const manifest = join(home, 'bundles.json') // the URL is never used: anything fetched would fail
+  writeFileSync(manifest, JSON.stringify({ version, bundles: { [`${process.platform}-${process.arch}`]: { url: 'http://127.0.0.1:9/unused', sha256: createHash('sha256').update(good).digest('hex') } } }))
+
+  const ssh = fakeSsh(dataDir, { mode: 'runner', windows: win })
+  const c = await launch({ remote: 'fakehost', dataDir, seed: true, waitFor: 'none', env: { ...ssh.env, HOME: home, USERPROFILE: home, ORC_BUNDLES_JSON: manifest, ORC_EDITION: 'offline', ORC_SERVERS_DIR: servers } })
+  const { page } = c
+  await expect(page.getByText(/did not match its checksum/)).toBeVisible({ timeout: 20_000 })
+  expect(existsSync(join(home, '.orc', version))).toBe(false) // nothing half-installed
+  await expect.poll(() => readdirSync(join(home, '.orc')).filter((e) => e.startsWith('.tmp.'))).toEqual([]) // staging cleaned up (just after the error is reported)
+
+  writeFileSync(file, good)
+  await page.getByRole('button', { name: 'Retry' }).click()
+  await expect(page.locator('textarea')).toBeVisible({ timeout: 30_000 })
+  expect(readdirSync(join(home, '.orc', version)).sort()).toEqual(win ? ['claude.exe', 'orc-server.exe'] : ['claude', 'orc-server'])
+  await send(page, 'hello there')
+  await expect(page.getByText('Hello from Claude')).toBeVisible()
+
+  // The link drops: the reconnect starts the installed server, with nothing left to send.
+  rmSync(servers, { recursive: true, force: true })
+  ssh.drop()
+  await expect(page.getByText('Disconnected from fakehost')).toBeVisible()
+  await expect(page.locator('textarea')).toBeVisible({ timeout: 20_000 })
+  await c.close()
 })

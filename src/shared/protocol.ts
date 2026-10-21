@@ -1,4 +1,4 @@
-import type { PushEvents } from './api'
+import type { InstallPhase, PushEvents } from './api'
 
 /** NDJSON frames between a client and `orc-server --stdio`; one per line, server stdout only ever carries these. */
 export interface Hello { version: string; client: { host: string; user: string }; takeover: boolean; oauthToken?: string } // oauthToken: goes only into the SDK process's env on the host
@@ -8,7 +8,7 @@ export type ServerFrame =
   | { ready: Ready }
   | { busy: Busy }
   | { error: string; claude?: string; reason?: string }
-  | { install: { phase: 'downloading' | 'verifying' | 'unpacking' } }
+  | { install: { phase: InstallPhase | 'needed' | 'done'; target?: string } } // needed (offline edition): the host has no install; target says which bundle to send
   | { id: number; result?: unknown; error?: string }
   | { event: keyof PushEvents | 'taken-over'; payload: unknown }
   | { pong: number }

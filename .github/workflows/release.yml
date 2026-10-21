@@ -1,33 +1,54 @@
 name: Release
 # A v* tag publishes a release:
-#   1. server: one macOS runner builds the orc-server bundle for every target (codesigning the darwin ones; PE needs none),
-#      and the bundles.json naming them with their checksums;
-#   2. smoke: each bundle runs on its own platform;
-#   3. app: Orc is packaged for Windows, Linux and macOS, each compiled with that bundles.json (the app checks a remote host's
-#      download against it), so the app and the bundles it installs always come from the same release;
-#   4. release: one GitHub release with the installers, the bundles and bundles.json.
+#   1. server: the orc-server bundle for each target, one job each (darwin on macOS for codesigning, the rest on Linux,
+#      which cross-builds them), each with its manifest entry (url + sha256);
+#   2. smoke: each bundle runs on its own platform, alongside the app builds;
+#   3. app: Orc for Windows, Linux and macOS in two editions, compiled with the merged bundles.json (the app checks a
+#      host's install against it): regular, whose hosts download their bundle from this release, and Orc Offline, which
+#      carries every bundle and sends it over ssh;
+#   4. release: one GitHub release with both editions' installers, the bundles and bundles.json.
 # Run by hand (workflow_dispatch) it's a dry run: everything but the release.
+# Speed: node_modules, Electron's downloads and build-server's cache are cached per runner; npm ci only runs on a miss.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
 
+env:
+  ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+  ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+
 jobs:
   server:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - { os: macos-latest, target: darwin-arm64 }
+          - { os: macos-latest, target: darwin-x64 }
+          - { os: ubuntu-latest, target: linux-x64 }
+          - { os: ubuntu-latest, target: linux-arm64 }
+          - { os: ubuntu-latest, target: win32-x64 }
+          - { os: ubuntu-latest, target: win32-arm64 }
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
-      - run: npm ci
+      - id: deps
+        uses: actions/cache@v4
+        with: { path: node_modules, key: "modules-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}" }
+      - if: steps.deps.outputs.cache-hit != 'true'
+        run: npm ci
+      - uses: actions/cache@v4
+        with: { path: out/server/cache, key: "server-${{ matrix.target }}-${{ hashFiles('package-lock.json', 'scripts/build-server.mjs') }}" }
       - run: npm run build
-      - run: node scripts/build-server.mjs darwin-arm64 darwin-x64 linux-x64 linux-arm64 win32-x64 win32-arm64
+      - run: node scripts/build-server.mjs ${{ matrix.target }}
+      # This target's manifest entry; the app and release jobs merge them into bundles.json.
+      - run: node -e "const t='${{ matrix.target }}';require('fs').writeFileSync('manifest-'+t+'.json',JSON.stringify({[t]:require('./bundles.json').bundles[t]}))"
       - uses: actions/upload-artifact@v4
-        with:
-          name: bundles
-          path: |
-            out/server/orc-server-*.tar.gz
-            bundles.json
+        with: { name: 'bundle-${{ matrix.target }}', path: 'out/server/orc-server-${{ matrix.target }}.tar.gz', compression-level: 0, if-no-files-found: error } # gzipped already
+      - uses: actions/upload-artifact@v4
+        with: { name: 'manifest-${{ matrix.target }}', path: 'manifest-${{ matrix.target }}.json', if-no-files-found: error }
 
   smoke:
     needs: server
@@ -44,11 +65,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4 # check-server needs only Node's own modules and the fixtures: no npm ci
         with: { node-version: 24 }
-      - run: npm ci
       - uses: actions/download-artifact@v4
-        with: { name: bundles, path: . } # the artifact keeps the workspace-relative paths (out/server/…, bundles.json)
+        with: { name: 'bundle-${{ matrix.target }}', path: out/server }
       - run: mkdir -p out/server/${{ matrix.target }} && tar xzf out/server/orc-server-${{ matrix.target }}.tar.gz -C out/server/${{ matrix.target }}
         shell: bash
       - run: node scripts/check-server.mjs out/server/${{ matrix.target }}/orc-server${{ startsWith(matrix.target, 'win32') && '.exe' || '' }}
@@ -59,6 +79,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        edition: [regular, offline]
         include:
           - { os: windows-latest, flags: --win --x64 }
           - { os: ubuntu-latest, flags: --linux --x64 }
@@ -70,16 +92,31 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
-      - run: npm ci
+      - id: deps
+        uses: actions/cache@v4
+        with: { path: node_modules, key: "modules-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}" }
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: "electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}"
+          restore-keys: "electron-${{ runner.os }}-${{ runner.arch }}-"
+      - if: steps.deps.outputs.cache-hit != 'true'
+        run: npm ci
       - uses: actions/download-artifact@v4
-        with: { name: bundles, path: server-bundles } # apart from out/, so the bundles themselves don't get packaged
-      - run: cp server-bundles/bundles.json bundles.json
-        shell: bash
-      - run: npm run build
-      - run: npx electron-builder ${{ matrix.flags }} --publish never
+        with: { pattern: manifest-*, path: manifests, merge-multiple: true }
+      - run: node -e "const fs=require('fs'),b={};for(const f of fs.readdirSync('manifests'))Object.assign(b,JSON.parse(fs.readFileSync('manifests/'+f)));fs.writeFileSync('bundles.json',JSON.stringify({version:require('./package.json').version,bundles:b},null,2)+'\n')"
+      - if: matrix.edition == 'offline'
+        uses: actions/download-artifact@v4
+        with: { pattern: bundle-*, path: out/server, merge-multiple: true }
+      - if: matrix.edition == 'regular'
+        run: npm run build && npx electron-builder ${{ matrix.flags }} --publish never
+      - if: matrix.edition == 'offline'
+        run: npm run build && npx electron-builder ${{ matrix.flags }} --config electron-builder.offline.yml --publish never
+        env: { ORC_OFFLINE: '1' }
       - uses: actions/upload-artifact@v4
         with:
-          name: app-${{ matrix.os }}
+          name: app-${{ matrix.os }}-${{ matrix.edition }}
+          compression-level: 0 # installers are compressed already
           if-no-files-found: error
           path: |
             dist/*.exe
@@ -93,8 +130,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { contents: write }
     steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: package.json, sparse-checkout-cone-mode: false }
       - uses: actions/download-artifact@v4
-        with: { name: bundles, path: bundles }
+        with: { pattern: bundle-*, path: bundles, merge-multiple: true }
+      - uses: actions/download-artifact@v4
+        with: { pattern: manifest-*, path: manifests, merge-multiple: true }
+      - run: node -e "const fs=require('fs'),b={};for(const f of fs.readdirSync('manifests'))Object.assign(b,JSON.parse(fs.readFileSync('manifests/'+f)));fs.writeFileSync('bundles/bundles.json',JSON.stringify({version:require('./package.json').version,bundles:b},null,2)+'\n')"
       - uses: actions/download-artifact@v4
         with: { pattern: app-*, path: app, merge-multiple: true }
       - uses: softprops/action-gh-release@v2
@@ -103,5 +145,4 @@ jobs:
           generate_release_notes: true
           files: |
             app/*
-            bundles/out/server/orc-server-*.tar.gz
-            bundles/bundles.json
+            bundles/*

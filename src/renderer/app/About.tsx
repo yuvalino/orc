@@ -25,7 +25,7 @@ export function AboutWindow() {
         <img src={logo} alt="" className="size-[72px]" draggable={false} />
         <div className="mt-2 text-[20px] font-semibold text-fg-bright">Orc</div>
         <div className="mt-1">Powered by Electron.</div>
-        <div>Version {__ORC_VERSION__}</div>
+        <div>Version {__ORC_VERSION__}{__ORC_OFFLINE__ && ' (Offline)'}</div>
         <div className="mt-4 text-fg-sub">Created by Yuvalino</div>
         <a href="https://yuvalino.com" target="_blank" rel="noreferrer" className={link}>yuvalino.com</a>
         <a href="https://x.com/jachashx" target="_blank" rel="noreferrer" className={link}>@jachashx on X</a>

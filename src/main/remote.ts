@@ -1,8 +1,9 @@
 import { spawn, type ChildProcess } from 'child_process'
-import { readFileSync } from 'fs'
+import { createReadStream, existsSync, readFileSync } from 'fs'
 import { hostname, tmpdir, userInfo } from 'os'
 import { join } from 'path'
 import { createInterface } from 'readline'
+import { app } from 'electron'
 import type { TransportState } from '@shared/api'
 import { decode, encode, type ClientFrame, type ServerFrame } from '@shared/protocol'
 import type { Push } from '../server/engine'
@@ -23,23 +24,35 @@ function explain(detail: string, code: number | null): string {
 const INSTALL_FAILED: Record<string, string> = {
   'no-curl': 'The host has no curl, which the one-time install needs.',
   download: 'The host could not download the Orc server bundle; it needs internet access to github.com.',
-  sha256: 'The downloaded Orc server bundle did not match its checksum.',
+  upload: 'The Orc server bundle could not be written on the host.',
+  sha256: 'The Orc server bundle did not match its checksum on the host.',
   unpacking: 'The Orc server bundle could not be unpacked on the host.',
   'no-bundle': "This build of Orc ships no server bundle for the host's platform.",
   'unsupported-host': 'orc-server runs on macOS, glibc ≥ 2.28 Linux and Windows (x64/arm64); this host is something else.'
 }
 
 /**
- * The remote command: a bootstrap that installs ~/.orc/<version>/ on first use and then becomes the server. The bundle
- * table is the repo's bundles.json, compiled in (ORC_BUNDLES_JSON points tests at another one).
+ * Two editions, set when the app is built (ORC_OFFLINE=1, see electron.vite.config.ts; ORC_EDITION for tests). The
+ * regular one has a host download orc-server from the GitHub release; the offline one carries every host's bundle and
+ * sends it over ssh, so nothing anywhere is fetched. Neither falls back to the other.
+ */
+const offline = process.env.ORC_EDITION ? process.env.ORC_EDITION === 'offline' : __ORC_OFFLINE__
+/** The offline edition's bundles: in the app's resources once packaged, scripts/build-server.mjs's out/server in development. */
+const serversDir = () => process.env.ORC_SERVERS_DIR || (app.isPackaged ? join(process.resourcesPath, 'servers') : join(__dirname, '../server'))
+type Mode = 'download' | 'probe' | 'receive'
+
+/**
+ * The remote command: a bootstrap that installs ~/.orc/<version>/ on first use and then becomes the server (modes in
+ * bootstrap.sh). The bundle table is the repo's bundles.json, compiled in (ORC_BUNDLES_JSON points tests at another one).
  * Unix hosts: a sh script, base64-encoded so the user's login shell (whatever it is) hands it to `sh` untouched.
  * Windows hosts: a PowerShell install script (-EncodedCommand, so cmd and PowerShell both pass it untouched) chained
  * with the server by cmd, which hands it our stdio intact. Which kind a host is gets learnt on the first connect.
  */
-function remoteCommand(windows: boolean): string {
+function remoteCommand(windows: boolean, mode: Mode): string {
   const { bundles } = (process.env.ORC_BUNDLES_JSON ? JSON.parse(readFileSync(process.env.ORC_BUNDLES_JSON, 'utf-8')) : manifest) as { bundles: Record<string, { url: string; sha256: string }> }
   const table = Object.entries(bundles).filter(([t]) => t.startsWith('win32') === windows).map(([t, b]) => `${t} ${b.url} ${b.sha256}`).join('\n')
-  const script = (windows ? bootstrapPs : bootstrap).replaceAll('__VERSION__', () => __ORC_VERSION__).replaceAll('__BUNDLES__', () => table)
+  const script = (windows ? bootstrapPs : bootstrap).replaceAll('__VERSION__', () => __ORC_VERSION__).replaceAll('__BUNDLES__', () => table).replaceAll('__MODE__', () => mode)
+  if (windows && mode === 'receive') return `cmd /c "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(script, 'utf16le').toString('base64')}"` // stdin: the bundle
   if (windows) return `cmd /c "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(script, 'utf16le').toString('base64')} <NUL && %USERPROFILE%\\.orc\\${__ORC_VERSION__}\\orc-server.exe --stdio"`
   return `sh -c 'eval "$(printf %s ${Buffer.from(script).toString('base64')} | base64 --decode)"'`
 }
@@ -88,19 +101,36 @@ export class Remote {
     this.set({ phase: 'connecting', error: undefined, holder: undefined, prompt: undefined, notice: undefined, install: undefined })
     this.stderr = ''; this.noise = []
     this.takeoverWanted = takeover
+    this.ssh(remoteCommand(this.windows, offline ? 'probe' : 'download'))
+    this.write(this.hello(takeover))
+    this.pinger = setInterval(() => this.write({ ping: Date.now() }), 15_000) // feeds the server's liveness timer, from hello on
+  }
+
+  /** One ssh connection running `command` on the host; its stdout frames go to onLine. */
+  private ssh(command: string): ChildProcess {
     const [ssh, ...pre] = process.env.ORC_SSH ? JSON.parse(process.env.ORC_SSH) as string[] : ['ssh'] // tests: a fake ssh, as an argv prefix
     const proc = spawn(ssh, [
       ...pre, '-T', '-o', 'StrictHostKeyChecking=ask', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
       ...(process.platform === 'win32' ? [] : ['-o', 'ControlMaster=auto', '-o', `ControlPath=${this.control}`, '-o', 'ControlPersist=60']), // Windows' OpenSSH has no multiplexing
-      '--', destination(this.host), remoteCommand(this.windows)
+      '--', destination(this.host), command
     ], { env: { ...process.env, ...this.askpass.env }, windowsHide: true })
     this.proc = proc
     proc.stderr!.on('data', (d) => { if (proc === this.proc) this.stderr += d })
     createInterface({ input: proc.stdout! }).on('line', (l) => this.onLine(proc, l))
     proc.on('close', (code) => this.onClose(proc, code))
     proc.stdin!.on('error', () => {}) // EPIPE when the server is already gone; close handles it
-    this.write(this.hello(takeover))
-    this.pinger = setInterval(() => this.write({ ping: Date.now() }), 15_000) // feeds the server's liveness timer, from hello on
+    return proc
+  }
+
+  /** The offline edition's install: a second connection whose stdin is the host's bundle; "done" connects again. */
+  private upload(target: string): void {
+    const file = join(serversDir(), `orc-server-${target}.tar.gz`)
+    this.stop()
+    if (!existsSync(file)) return this.fail(INSTALL_FAILED['no-bundle'])
+    this.set({ phase: 'installing', install: 'uploading' })
+    this.stderr = ''; this.noise = []
+    const proc = this.ssh(remoteCommand(this.windows, 'receive'))
+    createReadStream(file).pipe(proc.stdin!)
   }
 
   call(method: string, args: unknown[]): Promise<unknown> {
@@ -132,7 +162,10 @@ export class Remote {
       const p = this.pending.get(f.id); this.pending.delete(f.id)
       if (p) f.error ? p.rej(new Error(f.error)) : p.res(f.result ?? null)
     } else if ('install' in f) {
-      this.set({ phase: 'installing', install: f.install.phase })
+      const { phase, target } = f.install
+      if (phase === 'needed') this.upload(target ?? '')
+      else if (phase === 'done') this.connect(this.takeoverWanted)
+      else this.set({ phase: 'installing', install: phase })
     } else if ('error' in f) {
       if (f.error === 'not-logged-in') this.fail(`Claude isn't signed in on ${this.host}. Sign in for remote hosts (${process.platform === 'darwin' ? '⌘P' : 'Ctrl+P'} → Remote sign-in…), or run: ssh -t ${this.host} ${f.claude ?? 'claude'} auth login`)
       else if (f.error === 'install-failed' && f.reason === 'windows-shell' && !this.windows) { this.learnWindows(); this.connect(this.takeoverWanted) }

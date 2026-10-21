@@ -1,9 +1,12 @@
 appId: dev.orc.app
 productName: Orc
+# Orc Offline (electron-builder.offline.yml) is the same app under its own file names.
+artifactName: Orc-${version}-${os}-${arch}.${ext}
 directories:
   output: dist
 files:
   - out/**
+  - '!out/server/**' # orc-server bundles and their build cache: the offline edition carries the bundles as resources
   - package.json
 # The SDK ships its own Claude Code binary; it must stay a real file on disk (not inside app.asar) to be spawned.
 asarUnpack:
@@ -20,6 +23,7 @@ mac:
 win:
   target: [nsis]
 nsis:
+  artifactName: Orc-${version}-${os}-${arch}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
 linux:

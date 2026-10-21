@@ -20,8 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 24, cache: npm }
-      - run: npm ci
+        with: { node-version: 24 }
+      - id: deps # node_modules (Electron included) per runner and lockfile, shared with the release workflow: npm ci only on a miss
+        uses: actions/cache@v4
+        with: { path: node_modules, key: "modules-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}" }
+      - if: steps.deps.outputs.cache-hit != 'true'
+        run: npm ci
       - run: npm run typecheck
       - run: npm run build
       # Electron's sandbox on a Linux runner: Ubuntu 24.04 restricts the unprivileged user namespaces it uses; where
