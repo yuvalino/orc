@@ -54,6 +54,17 @@ jobs:
       - run: npm run build
       - run: node scripts/build-server.mjs ${{ matrix.target }}
         env: { ORC_SIGN_IDENTITY: '${{ steps.signing.outputs.identity }}' }
+      # Notarized on its own too, for every release (betas build no Orc Offline to carry it through). Apple keeps the
+      # approval; the binary, its bundle and checksum don't change, so hosts get exactly what's in bundles.json.
+      - if: steps.signing.outputs.identity != ''
+        run: |
+          ditto -c -k out/server/${{ matrix.target }}/orc-server "$RUNNER_TEMP/orc-server.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/orc-server.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait --output-format json | tee "$RUNNER_TEMP/notary.json"
+          grep -q '"status":"Accepted"' "$RUNNER_TEMP/notary.json" || { echo '::error::Apple did not accept orc-server'; exit 1; }
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       # This target's manifest entry; the app and release jobs merge them into bundles.json.
       - run: node -e "const t='${{ matrix.target }}';require('fs').writeFileSync('manifest-'+t+'.json',JSON.stringify({[t]:require('./bundles.json').bundles[t]}))"
       - uses: actions/upload-artifact@v4
