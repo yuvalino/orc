@@ -37,7 +37,7 @@ Use it locally or remotely to view your active projects and sessions from everyw
    | Platform | File |
    |---|---|
    | Windows | `.exe` installer |
-   | macOS (Apple silicon) | `.dmg` or `.zip` |
+   | macOS (Apple silicon) | `.dmg` |
    | Linux | `.AppImage` |
 
    macOS builds aren't signed yet: the first time, right-click Orc, choose **Open**, then confirm.

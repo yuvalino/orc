@@ -6,7 +6,5 @@ extraResources:
   - from: out/server
     to: servers
     filter: [orc-server-*.tar.gz]
-mac:
-  target: [dmg]
 nsis:
   artifactName: Orc-Offline-${version}-${os}-${arch}.${ext}

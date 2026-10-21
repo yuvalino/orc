@@ -14,7 +14,7 @@ asarUnpack:
   - node_modules/@anthropic-ai/claude-agent-sdk-*/**
 mac:
   category: public.app-category.developer-tools
-  target: [dmg, zip]
+  target: [dmg] # releases ship the dmg only
   hardenedRuntime: true
   # Signing/notarization: set CSC_NAME (or CSC_LINK/CSC_KEY_PASSWORD) and APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID.
   # The unpacked SDK binary is signed along with the bundle.
