@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ChevronRight, Keyboard, Pencil, Search, Settings as Cog, User } from 'lucide-react'
+import type { UpdatePrefs } from '@shared/api'
 import { SHORTCUTS, comboOf, showCombo, type ShortcutAction } from '../lib/shortcuts'
 import { Resizer } from '../lib/Resizer'
 import { PANE, useStore, type SettingsTab } from '../stores/store'
 
 const TABS: { id: SettingsTab; label: string; icon: React.ReactNode; keywords: string; disabled?: boolean }[] = [
-  { id: 'general', label: 'General', icon: <Cog size={16} />, keywords: '', disabled: true },
+  { id: 'general', label: 'General', icon: <Cog size={16} />, keywords: 'updates automatic beta version' },
   { id: 'personalization', label: 'Personalization', icon: <User size={16} />, keywords: 'custom instructions claude.md memory' },
   { id: 'shortcuts', label: 'Keyboard shortcuts', icon: <Keyboard size={16} />, keywords: 'keys hotkeys keybindings' }
 ]
@@ -40,6 +41,7 @@ export function Settings() {
         </div>
       </nav>
       <main className="min-w-0 flex-1 overflow-y-auto bg-bg">
+        {settings.tab === 'general' && <General />}
         {settings.tab === 'personalization' && (settings.editing === 'instructions' ? <InstructionsEditor /> : <Personalization />)}
         {settings.tab === 'shortcuts' && <KeyboardShortcuts />}
       </main>
@@ -53,6 +55,54 @@ const Page = ({ title, children }: { title: string; children: React.ReactNode })
     {children}
   </div>
 )
+
+/** An on/off switch: role=switch for assistive tech, the accent color when on. */
+function Switch({ on, disabled, label, onChange }: { on: boolean; disabled?: boolean; label: string; onChange(on: boolean): void }) {
+  return (
+    <button role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={() => onChange(!on)}
+      className={`relative h-[18px] w-8 shrink-0 rounded-full transition-colors duration-150 disabled:opacity-40 ${on ? 'bg-accent' : 'bg-[#4a4a4a]'}`}>
+      <span className={`absolute top-[2px] size-[14px] rounded-full bg-white transition-[left] duration-150 ${on ? 'left-[16px]' : 'left-[2px]'}`} />
+    </button>
+  )
+}
+
+const Row = ({ title, detail, children }: { title: string; detail?: React.ReactNode; children: React.ReactNode }) => (
+  <div className="flex items-center gap-4 border-b border-line py-3.5 last:border-b-0">
+    <div className="min-w-0 flex-1">
+      <div className="text-[14px] font-medium text-fg-bright">{title}</div>
+      {detail && <div className="text-[12.5px] text-fg-2">{detail}</div>}
+    </div>
+    {children}
+  </div>
+)
+
+/** General: for now, how Orc updates. Orc Offline has no updater, so its controls are shown but off. */
+function General() {
+  const [prefs, setPrefs] = useState<UpdatePrefs | null>(null)
+  useEffect(() => {
+    window.orc.updates.prefs().then(setPrefs)
+    return window.orc.on('updates:prefs', setPrefs) // changed in another window
+  }, [])
+  const change = (patch: Partial<UpdatePrefs>) => window.orc.updates.setPrefs(patch).then(setPrefs)
+  const off = __ORC_OFFLINE__ || !prefs
+  return (
+    <Page title="General">
+      <h3 className="mt-12 text-[15px] font-semibold text-fg-bright">Updates</h3>
+      {__ORC_OFFLINE__ && <p className="mt-1 text-[13px] text-fg-2">Orc Offline doesn't download updates. To update, install a newer Orc Offline.</p>}
+      <div className={`${card} mt-3 px-4`}>
+        <Row title="Automatic updates" detail="Download updates in the background and install them when Orc has been idle for 5 minutes.">
+          <Switch label="Automatic updates" on={!__ORC_OFFLINE__ && !!prefs?.auto} disabled={off} onChange={(auto) => change({ auto })} />
+        </Row>
+        <Row title="Receive beta updates" detail="Get early versions before they're released. They may have bugs.">
+          <Switch label="Receive beta updates" on={!__ORC_OFFLINE__ && !!prefs?.beta} disabled={off} onChange={(beta) => change({ beta })} />
+        </Row>
+        <Row title="Version" detail={`Orc ${__ORC_VERSION__}${__ORC_OFFLINE__ ? ' (Offline)' : ''}`}>
+          <button disabled={__ORC_OFFLINE__} onClick={() => window.orc.updates.check()} className="rounded-full bg-[#2c2c2c] px-3.5 py-1.5 text-[13px] text-fg-bright hover:bg-[#363636] disabled:text-fg-3 disabled:hover:bg-[#2c2c2c]">Check for updates</button>
+        </Row>
+      </div>
+    </Page>
+  )
+}
 
 const INSTRUCTIONS = { title: 'Claude Code instructions', detail: 'Edit the CLAUDE.md file in your Claude folder (~/.claude), on the machine your chats run on. Project instructions may also apply.' }
 

@@ -8,7 +8,7 @@ test('settings: cog menu, tabs and search, CLAUDE.md editor, recorded shortcuts'
   const { page } = c
   const claudeMd = join(c.dataDir, 'claude', 'CLAUDE.md')
 
-  // The cog at the bottom of the sidebar opens a drop-up; Settings opens on Personalization with its search focused.
+  // The cog at the bottom of the sidebar opens a drop-up; Settings opens on General with its search focused.
   const edge = (await page.getByRole('separator').first().boundingBox())! // narrowest sidebar, so the menu crosses its edge
   await page.mouse.move(edge.x + 3, edge.y + 200); await page.mouse.down(); await page.mouse.move(edge.x - 300, edge.y + 200, { steps: 4 }); await page.mouse.up()
   await page.getByTitle('Settings', { exact: true }).click()
@@ -26,13 +26,27 @@ test('settings: cog menu, tabs and search, CLAUDE.md editor, recorded shortcuts'
   await expect(menu.getByRole('button', { name: 'Quit' })).toBeVisible()
   await shot(page, 'settings-menu')
   await page.getByRole('button', { name: /^Settings/ }).last().click()
-  await expect(page.getByRole('heading', { name: 'Personalization' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General' })).toBeVisible()
   await expect(page.getByLabel('Search settings')).toBeFocused()
   const selects = (l: ReturnType<typeof page.getByText>) => l.evaluate((e) => getComputedStyle(e).userSelect)
   expect(await selects(page.getByRole('heading', { name: 'Settings' }))).toBe('none') // titles aren't text to select…
-  expect(await selects(page.getByRole('heading', { name: 'Personalization' }))).toBe('none')
+  expect(await selects(page.getByRole('heading', { name: 'General' }))).toBe('none')
   expect(await selects(page.getByLabel('Search settings'))).not.toBe('none') // …text boxes are
-  await expect(page.getByRole('button', { name: 'General' })).toBeDisabled()
+
+  // General → Updates: automatic updates on and betas off by default, saved for the whole app.
+  const auto = page.getByRole('switch', { name: 'Automatic updates' }), beta = page.getByRole('switch', { name: 'Receive beta updates' })
+  await expect(auto).toHaveAttribute('aria-checked', 'true')
+  await expect(beta).toHaveAttribute('aria-checked', 'false')
+  await beta.click()
+  await expect(beta).toHaveAttribute('aria-checked', 'true')
+  await auto.click()
+  await expect(auto).toHaveAttribute('aria-checked', 'false')
+  expect(JSON.parse(readFileSync(join(c.userData, 'updates.json'), 'utf-8'))).toEqual({ auto: false, beta: true })
+  await expect(page.getByText(/^Orc \d+\.\d+\.\d+$/)).toBeVisible() // the version
+  await expect(page.getByRole('button', { name: 'Check for updates' })).toBeEnabled()
+  await shot(page, 'settings-general')
+  await page.getByRole('button', { name: 'Personalization' }).click()
+  await expect(page.getByRole('heading', { name: 'Personalization' })).toBeVisible()
   const nav = page.locator('nav').filter({ hasText: 'Settings' }), bg = (l: typeof nav) => l.evaluate((e) => getComputedStyle(e).backgroundColor)
   expect(await bg(page.getByLabel('Search settings').locator('xpath=..'))).not.toBe(await bg(nav)) // the search box stands out from its pane
 
@@ -85,7 +99,7 @@ test('settings: cog menu, tabs and search, CLAUDE.md editor, recorded shortcuts'
   await page.keyboard.press('Escape')
   await expect(page.getByRole('heading', { name: 'Keyboard shortcuts' })).toHaveCount(0)
   await page.keyboard.press('Control+,')
-  await expect(page.getByRole('heading', { name: 'Personalization' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General' })).toBeVisible()
   await page.keyboard.press('Control+Shift+J')
   await expect(page.getByTestId('empty-chat')).toBeVisible()
   await c.close()

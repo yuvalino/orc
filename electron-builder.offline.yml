@@ -6,5 +6,6 @@ extraResources:
   - from: out/server
     to: servers
     filter: [orc-server-*.tar.gz]
+publish: null # no updater, so no update files
 nsis:
   artifactName: Orc-Offline-${version}-${os}-${arch}.${ext}

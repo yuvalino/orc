@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Account, ApprovalMode, AskAnswer, Item, ModelOption, Project, Session, SessionStatus } from '@shared/types'
-import type { TransportState } from '@shared/api'
+import type { Notice, TransportState } from '@shared/api'
 import { applyPatch } from '@shared/types'
 import { defaultShortcuts, type ShortcutAction, type Shortcuts } from '../lib/shortcuts'
 
@@ -32,6 +32,9 @@ interface State {
   setDefaults(patch: Partial<Defaults>): void
   select(id: string, row?: string): Promise<void>
   newChat(projectId?: string | null): void
+  notices: Notice[] // the bell's panel (main process keeps them; see notices.ts)
+  noticesOpen: boolean
+  setNoticesOpen(open: boolean): void
   send(text: string): Promise<void>
   interrupt(): Promise<void>
   stopTask(taskId: string): Promise<void>
@@ -101,7 +104,8 @@ function loadWidths(): State['widths'] {
 
 export const useStore = create<State>((set, get) => ({
   projects: [], sessions: [], activeId: null, activeRow: null, draftProjectId: null, transcripts: {}, status: {}, models: [], account: null, draft: '', palette: null, panel: null, sidebarOpen: true, collapsed: loadCollapsed(), widths: loadWidths(), settings: null, shortcuts: loadShortcuts(), history: { views: [{ activeId: null, activeRow: null, draftProjectId: null, settings: null }], at: 0 },
-  defaults: { approvalMode: 'ask', model: null, effort: null }, transport: null,
+  defaults: { approvalMode: 'ask', model: null, effort: null }, transport: null, notices: [], noticesOpen: false,
+  setNoticesOpen(open) { set({ noticesOpen: open }) },
 
   init() {
     const loadModels = () => api().codecInfo().then((i) => { if (i.models.length) { set({ models: i.models, account: i.account }); api().settings.set('models', i.models) } })
@@ -121,7 +125,14 @@ export const useStore = create<State>((set, get) => ({
       set((s) => ({ status: { ...Object.fromEntries(live), ...s.status } }))
       const id = get().activeId
       if (id) { set({ activeId: null }); get().select(id) }
+      else if (!restored) { // reopened by an update's restart: where this window was
+        restored = true
+        const v = await api().window.restored()
+        if (v?.activeId && sessions.some((x) => x.id === v.activeId)) get().select(v.activeId)
+        else if (v?.settingsTab) get().openSettings(v.settingsTab as SettingsTab)
+      }
     }
+    let restored = false
     const onTransport = (t: TransportState) => { const was = get().transport?.phase; set({ transport: t }); if (t.phase === 'ready' && was !== 'ready') load() }
     api().on('transport:state', onTransport)
     api().transport.state().then((t) => { if (!get().transport) onTransport(t) }) // a state pushed before the page loaded would otherwise be lost; a push that beat this reply is newer
@@ -139,6 +150,9 @@ export const useStore = create<State>((set, get) => ({
     api().on('menu:new-chat', () => get().newChat())
     api().on('menu:settings', () => get().openSettings())
     api().on('menu:open-folder', () => get().addProject())
+    api().notices.list().then((notices) => set({ notices }))
+    api().on('notices:changed', (notices) => set({ notices }))
+    api().on('notices:open', () => set({ noticesOpen: true, sidebarOpen: true, settings: null }))
     menuShortcuts(get().shortcuts)
   },
 
@@ -183,7 +197,7 @@ export const useStore = create<State>((set, get) => ({
     if (w === s.widths[pane]) return
     const widths = { ...s.widths, [pane]: w }; set({ widths }); saveWidths(widths)
   },
-  openSettings: (tab = 'personalization') => set({ settings: { tab }, palette: null }),
+  openSettings: (tab = 'general') => set({ settings: { tab }, palette: null }),
   closeSettings: () => set({ settings: null }),
   setSettings: (settings) => set({ settings }),
   setShortcut(action, index, combo) {

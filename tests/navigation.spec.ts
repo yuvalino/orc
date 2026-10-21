@@ -52,7 +52,7 @@ test('menu bar switches menus on hover; back and forward step through chats and 
   await c.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.blur()))
   await bar('Edit').click()
   await menu('Edit').getByRole('menuitem', { name: /Settings…/ }).click()
-  await expect(page.getByRole('heading', { name: 'Personalization' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General' })).toBeVisible()
   await page.keyboard.press('Escape')
 
   // Back and forward: chat → chat → settings → another settings tab, and back again.
@@ -64,7 +64,7 @@ test('menu bar switches menus on hover; back and forward step through chats and 
   await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()
   await expect(forward).toBeDisabled()
   await back.click()
-  await expect(page.getByRole('heading', { name: 'Personalization' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General' })).toBeVisible()
   await back.click()
   await expect(header()).toContainText('Beta chat')
   await back.click()
@@ -72,7 +72,7 @@ test('menu bar switches menus on hover; back and forward step through chats and 
   await forward.click()
   await expect(header()).toContainText('Beta chat')
   await page.keyboard.press('Control+]')
-  await expect(page.getByRole('heading', { name: 'Personalization' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General' })).toBeVisible()
   await page.keyboard.press('Control+[')
   await expect(header()).toContainText('Beta chat')
 

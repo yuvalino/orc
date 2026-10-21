@@ -10,11 +10,13 @@ import { TitleBar } from './TitleBar'
 import { SlidePane } from '../lib/SlidePane'
 import { Settings } from '../settings/Settings'
 import { comboOf, type ShortcutAction } from '../lib/shortcuts'
+import { startActivity } from './activity'
 
 export default function App() {
   const { init, sidebarOpen, widths, transport, settings } = useStore()
   useEffect(() => {
     init()
+    const stopActivity = startActivity()
     const run: Record<ShortcutAction, () => void> = {
       back: () => useStore.getState().go(-1),
       forward: () => useStore.getState().go(1),
@@ -32,7 +34,7 @@ export default function App() {
     }
     const onMouse = (e: MouseEvent) => { if (e.button === 3 || e.button === 4) { e.preventDefault(); useStore.getState().go(e.button === 3 ? -1 : 1) } } // a mouse's back/forward buttons
     window.addEventListener('keydown', onKey); window.addEventListener('mouseup', onMouse)
-    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mouseup', onMouse) }
+    return () => { stopActivity(); window.removeEventListener('keydown', onKey); window.removeEventListener('mouseup', onMouse) }
   }, [])
   useEffect(() => { document.title = transport?.kind === 'remote' ? `Orc — ${transport.host}` : 'Orc' }, [transport?.host])
   if (!transport || transport.phase !== 'ready') return <div className="flex h-full">{transport && <Connect t={transport} />}<Palette /></div> // the palette still signs in or opens another host

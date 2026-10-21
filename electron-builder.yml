@@ -14,7 +14,7 @@ asarUnpack:
   - node_modules/@anthropic-ai/claude-agent-sdk-*/**
 mac:
   category: public.app-category.developer-tools
-  target: [dmg] # releases ship the dmg only
+  target: [dmg] # what people download; the release workflow adds the zip the updater installs from (regular Orc only)
   hardenedRuntime: true
   # Signing/notarization: set CSC_NAME (or CSC_LINK/CSC_KEY_PASSWORD) and APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID.
   # The unpacked SDK binary is signed along with the bundle.
@@ -26,6 +26,12 @@ nsis:
   artifactName: Orc-${version}-${os}-${arch}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
+# Regular Orc updates itself from the GitHub releases: this writes the app's update config and each release's
+# latest*.yml / beta*.yml and .blockmap files (the workflow publishes them; electron-builder itself never does).
+publish:
+  provider: github
+  owner: yuvalino
+  repo: orc
 linux:
   target: [AppImage]
   category: Development

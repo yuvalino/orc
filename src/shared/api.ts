@@ -9,7 +9,32 @@ export interface PushEvents {
   'menu:settings': undefined
   'menu:open-folder': undefined
   'transport:state': TransportState
+  'updates:prefs': UpdatePrefs
+  'notices:changed': Notice[]
+  'notices:open': undefined // Check for updates: show the panel with its result
 }
+
+/** How regular Orc updates itself (Settings → General). Orc Offline has no updater; it shows these greyed out. */
+export interface UpdatePrefs { auto: boolean; beta: boolean }
+
+/**
+ * The notifications panel (the bell): in memory only, the same in every window of an instance. For now, only updates:
+ * found (automatic updates off, or a platform Orc can't install on: a link instead), downloading, ready, failed, and a
+ * manual check's "up to date".
+ */
+export type Notice = { id: string } & (
+  | { kind: 'update-available'; version: string; url?: string } // url: get it from the release page (Orc can't install it here)
+  | { kind: 'update-downloading'; version: string; transferred: number; total: number; bytesPerSecond: number }
+  | { kind: 'update-ready'; version: string }
+  | { kind: 'update-failed'; version?: string; message: string }
+  | { kind: 'update-current'; version: string }
+)
+
+/** A window's view, kept across an update's restart. */
+export interface RestoredView { activeId: string | null; settingsTab: string | null }
+
+/** What a restart would interrupt, across every Orc window (remote hosts' too): chat titles, and how many composers hold unsent text. */
+export interface Activity { working: string[]; waiting: string[]; drafts: number }
 
 /** The one-time install of orc-server on a host: downloaded there (regular edition) or sent from this app (offline edition). */
 export type InstallPhase = 'downloading' | 'uploading' | 'verifying' | 'unpacking'
@@ -56,7 +81,19 @@ export interface OrcApi {
   codecInfo(): Promise<{ models: ModelOption[]; account: Account | null }>
   settings: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }
   instructions: { get(): Promise<{ path: string; text: string | null }>; set(text: string): Promise<void> } // the user's CLAUDE.md on the engine's machine; text null: no file yet
-  window: { open(): Promise<void>; quit(): Promise<void> } // open: another window on this instance; quit: the whole app
+  window: { open(): Promise<void>; quit(): Promise<void>; restored(): Promise<RestoredView | null> } // open: another window on this instance; quit: the whole app; restored: this window's view from before an update's restart
+  updates: {
+    prefs(): Promise<UpdatePrefs>
+    setPrefs(patch: Partial<UpdatePrefs>): Promise<UpdatePrefs> // app-wide, shared by every window and instance
+    check(): Promise<void> // Help → Check for updates…: results land in the notifications
+    download(): Promise<void> // automatic updates off: fetch the one found
+    cancel(): Promise<void>
+    restart(): Promise<void> // Restart to update: asks first (a dialog) when it would interrupt something
+    pending(): Promise<{ version: string; activity: Activity } | null> // for that dialog
+    restartNow(): Promise<void> // the dialog's confirmation
+  }
+  notices: { list(): Promise<Notice[]>; dismiss(id: string): Promise<void> }
+  activity: { report(a: Activity): Promise<void>; input(): Promise<void> } // a window's part in "idle": its chats and drafts, and that you used it
   transport: {
     state(): Promise<TransportState>
     takeover(): Promise<void>

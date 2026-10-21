@@ -6,7 +6,10 @@ const call = (ch: string) => (...args: unknown[]) => ipcRenderer.invoke(ch, ...a
 const api: OrcApi = {
   platform: process.platform,
   menu: { items: call('menu.items'), run: call('menu.run'), shortcuts: call('menu.shortcuts') },
-  window: { open: call('window.open'), quit: call('window.quit') },
+  window: { open: call('window.open'), quit: call('window.quit'), restored: call('window.restored') },
+  updates: { prefs: call('updates.prefs'), setPrefs: call('updates.setPrefs'), check: call('updates.check'), download: call('updates.download'), cancel: call('updates.cancel'), restart: call('updates.restart'), pending: call('updates.pending'), restartNow: call('updates.restartNow') },
+  notices: { list: call('notices.list'), dismiss: call('notices.dismiss') },
+  activity: { report: call('activity.report'), input: call('activity.input') },
   projects: { list: call('projects.list'), add: call('projects.add'), remove: call('projects.remove'), files: call('projects.files'), browse: call('projects.browse') },
   sessions: {
     list: call('sessions.list'), create: call('sessions.create'), open: call('sessions.open'),

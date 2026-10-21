@@ -3,6 +3,7 @@ import { ChevronRight, Folder, FolderOpen, Loader2, LogOut, Pencil, Pin, PinOff,
 import type { Project, Session } from '@shared/types'
 import { Collapse } from '../lib/Collapse'
 import { Menu, useContextMenu } from '../lib/Menu'
+import { NotificationsButton } from './Notifications'
 import { Resizer } from '../lib/Resizer'
 import { PANE, sessionTitle, useStore } from '../stores/store'
 import { showCombo } from '../lib/shortcuts'
@@ -25,7 +26,8 @@ export function Sidebar() {
           chat names and project folders all start on it; a project's chats start on its name. */}
       <div className="flex items-center justify-between pb-1 pl-5 pr-3 pt-2">
         <span className="flex items-center gap-1.5 text-[16px] font-semibold text-fg-bright">Orc<img src={logo} alt="" className="size-[32px]" draggable={false} />{transport?.kind === 'remote' && <span className="rounded-md bg-accent/20 px-1.5 py-0.5 text-[11px] font-medium text-[#93b4ff]">ssh: {transport.host}</span>}</span>
-        <button onClick={() => openPalette('chats')} title={`Search chats${shortcuts.search[0] ? ` (${showCombo(shortcuts.search[0])})` : ''}`} className="no-drag flex size-8 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><Search size={18} strokeWidth={1.8} /></button>
+        <span className="flex items-center"><NotificationsButton />
+        <button onClick={() => openPalette('chats')} title={`Search chats${shortcuts.search[0] ? ` (${showCombo(shortcuts.search[0])})` : ''}`} className="no-drag flex size-8 items-center justify-center rounded-md text-fg-2 hover:bg-bg-hover hover:text-fg-bright"><Search size={18} strokeWidth={1.8} /></button></span>
       </div>
       <div className="px-2 pt-1">
         <button onClick={() => newChat()} className="flex w-full items-center gap-2 rounded-lg px-3 py-[6px] text-[14px] text-fg-bright hover:bg-bg-hover"><SquarePen size={16} /> New chat</button>
