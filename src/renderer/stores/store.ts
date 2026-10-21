@@ -156,8 +156,8 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
-  // undefined keeps the current project choice; null means "no project" (home folder).
-  newChat(projectId) { set((s) => ({ settings: null, activeId: null, palette: null, panel: s.panel && { toolUseId: null }, draftProjectId: projectId === undefined ? s.draftProjectId : projectId })) },
+  // A project's own new-chat button passes it; every other way in (sidebar, Recents, menu, shortcut, palette) starts with no project.
+  newChat(projectId = null) { set((s) => ({ settings: null, activeId: null, palette: null, panel: s.panel && { toolUseId: null }, draftProjectId: projectId })) },
 
   async send(text) {
     let id = get().activeId

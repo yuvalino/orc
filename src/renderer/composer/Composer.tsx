@@ -56,7 +56,7 @@ export function Composer() {
   return (
     <div style={{ paddingInline: `clamp(${COMPOSER_PAD.min}px, ${COMPOSER_PAD.share * 100}%, ${COMPOSER_PAD.max}px)` }} className="pb-3.5 pt-2">
       {!session && (
-        <Menu up className="mx-3" trigger={<button className="flex w-full items-center gap-2 rounded-t-xl bg-[#272727] px-4 py-2 text-[13px] text-fg-sub hover:text-fg-bright"><Folder size={14} />{projectName()}<ChevronDown size={11} /></button>} items={projectItems} />
+        <Menu up className="mx-3" trigger={<button data-testid="project-picker" className="flex w-full items-center gap-2 rounded-t-xl bg-[#272727] px-4 py-2 text-[13px] text-fg-sub hover:text-fg-bright"><Folder size={14} />{projectName()}<ChevronDown size={11} /></button>} items={projectItems} />
       )}
       <div className="rounded-[14px] bg-bg-composer">
         <textarea ref={ref} value={draft} onChange={(e) => setDraft(e.target.value)} rows={1} placeholder="Work with Orc" autoFocus
