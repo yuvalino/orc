@@ -5,6 +5,7 @@ import { AskCard } from './asks'
 import { Markdown, StreamingMarkdown } from './Markdown'
 import { Timeline, type TimelineTurn } from './Timeline'
 import { LaunchRow, SubagentsButton, isLaunch, type Tool } from './agents'
+import { duration } from '../lib/duration'
 import { sessionTitle, useActive, useStore } from '../stores/store'
 import logo from '../assets/logo.png'
 
@@ -253,7 +254,6 @@ function Actions({ text, at, pinned, off, side = 'left' }: { text: string; at?: 
 }
 
 /** "12s", "1m 05s". */
-const forTime = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` }
 
 /** The engine's clock (which may be another machine's), ticking each second while `on`. */
 function useEngineNow(on: boolean) {
@@ -265,7 +265,7 @@ function useEngineNow(on: boolean) {
 
 /**
  * A turn's work, folded under one line. While it runs: "Thinking…" (until something but thinking happens; after 10s it says for how
- * long), then "Working for 12s", shimmering. Done: "Worked for 17s".
+ * long), then "Working for 12s", shimmering. Done: "Worked for 17s" (or "1h 02m 05s", see duration).
  */
 function WorkSection({ items, running, startedAt, durationMs }: { items: Item[]; running: boolean; startedAt?: number; durationMs?: number }) {
   const [open, setOpen] = useState(false)
@@ -274,8 +274,8 @@ function WorkSection({ items, running, startedAt, durationMs }: { items: Item[];
   const now = useEngineNow(running)
   const took = startedAt ? now - startedAt : 0
   const thinking = items.every((i) => i.kind === 'thinking') // nothing yet but (maybe) thinking
-  const label = running ? (thinking ? (took < 10_000 ? 'Thinking…' : `Thinking for ${forTime(took)}`) : `Working for ${forTime(took)}`)
-    : durationMs ? `Worked for ${durationMs < 1000 ? '<1s' : Math.round(durationMs / 1000) + 's'}` : 'Worked'
+  const label = running ? (thinking ? (took < 10_000 ? 'Thinking…' : `Thinking for ${duration(took)}`) : `Working for ${duration(took)}`)
+    : durationMs ? `Worked for ${durationMs < 1000 ? '<1s' : duration(durationMs)}` : 'Worked'
   const launches = items.filter((i): i is Tool => i.kind === 'tool' && isLaunch(i))
   return (
     <div className="border-t border-line pt-2">
