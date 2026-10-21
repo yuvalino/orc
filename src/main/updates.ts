@@ -1,15 +1,20 @@
+import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import type { UpdatePrefs } from '@shared/api'
-import { JsonFile } from '../server/store'
 import { baseUserData } from './shell'
 
-/** Update preferences, shared by every window and instance (Settings → General → Updates); the updater reads them. */
-const file = new JsonFile<Partial<UpdatePrefs>>(() => join(baseUserData, 'updates.json'), {})
+/**
+ * Update preferences, shared by every window and instance (Settings → General → Updates). Read from disk every time, not
+ * cached: a remote host's window (another process) may have just changed them, and the updater must see it.
+ */
+const file = () => join(baseUserData, 'updates.json')
 const DEFAULTS: UpdatePrefs = { auto: true, beta: false }
 
-export const updatePrefs = (): UpdatePrefs => ({ ...DEFAULTS, ...file.read() })
+export function updatePrefs(): UpdatePrefs {
+  try { return { ...DEFAULTS, ...(JSON.parse(readFileSync(file(), 'utf-8')) as Partial<UpdatePrefs>) } } catch { return DEFAULTS }
+}
 export function setUpdatePrefs(patch: Partial<UpdatePrefs>): UpdatePrefs {
   const next = { ...updatePrefs(), ...patch }
-  file.write(next)
+  writeFileSync(file(), JSON.stringify(next))
   return next
 }

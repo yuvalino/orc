@@ -5,7 +5,7 @@ import { join } from 'path'
 import type { UpdatePrefs } from '@shared/api'
 import { configureClaude } from '../server/codecs/claude/codec'
 import { setDataDir } from '../server/store'
-import { startActivity } from './activity'
+import { quitOthers, startActivity } from './activity'
 import { push, registerIpc } from './ipc'
 import { Remote } from './remote'
 import { dropNotice, notices } from './notices'
@@ -25,7 +25,7 @@ const unpacked = join(process.resourcesPath ?? '', 'app.asar.unpacked/node_modul
 configureClaude({ version: __ORC_VERSION__, binaryPath: app.isPackaged && existsSync(unpacked) ? unpacked : undefined })
 let secondInstances = 0
 const background = !!process.env.ORC_BACKGROUND // tests and scripted runs: windows render but are never shown, so nothing pops up over your work
-app.on('second-instance', (_e, argv) => { if (argv.includes('--check-updates')) return void checkForUpdates(); secondInstances++; const w = BrowserWindow.getAllWindows()[0]; if (w && !background) { if (w.isMinimized()) w.restore(); w.focus() } })
+app.on('second-instance', (_e, argv) => { if (argv.includes('--check-updates')) return void (remoteHost || checkForUpdates()); /* only the local instance checks (and never hands it back) */ secondInstances++; const w = BrowserWindow.getAllWindows()[0]; if (w && !background) { if (w.isMinimized()) w.restore(); w.focus() } })
 Object.assign(globalThis, { orcSecondInstances: () => secondInstances, orcNewWindow: () => createWindow() })
 const remote = remoteHost && app.hasSingleInstanceLock() ? new Remote(remoteHost, push) : null // a duplicate instance is quitting: no ssh, no askpass dir
 const icon = join(__dirname, '../../build/icon.png') // in development; packaged builds carry the icons electron-builder derives from this file
@@ -91,18 +91,39 @@ const openAbout = () => openDialog('about', 'About Orc', 340, 340)
 let updater: typeof import('./updater') | null = null
 function checkForUpdates(): void {
   if (__ORC_OFFLINE__) return
-  if (remoteHost) { spawn(process.execPath, [...(app.isPackaged ? [] : [app.getAppPath()]), '--check-updates'], { detached: true, stdio: 'ignore' }).unref(); return }
+  if (remoteHost) { // to the local instance, as openRemote does it the other way: a dev/test instance's dirs are its own
+    const env = { ...process.env }; delete env.ORC_USER_DATA_DIR; delete env.ORC_DATA_DIR
+    spawn(process.execPath, [...(app.isPackaged ? [] : [app.getAppPath()]), '--check-updates'], { detached: true, stdio: 'ignore', env }).unref()
+    return
+  }
   const w = BrowserWindow.getAllWindows().find((x) => slotOf.has(x.webContents.id) && x.isFocused()) ?? BrowserWindow.getAllWindows().find((x) => slotOf.has(x.webContents.id))
-  if (w) { if (w.isMinimized()) w.restore(); if (!background) w.focus(); w.webContents.send('notices:open') }
+  if (w) {
+    if (w.isMinimized()) w.restore()
+    if (!background) w.focus()
+    const open = () => w.webContents.send('notices:open')
+    if (w.webContents.isLoading()) w.webContents.once('did-finish-load', open); else open() // a window just opened (Orc started for this) would miss it
+  }
   void updater?.check(true)
 }
-/** Before an update installs: each window's view and the remote hosts open now come back after the restart; the other processes close. */
-async function beforeInstall(others: { pid: number; host: string | null }[]): Promise<void> {
-  const wins = BrowserWindow.getAllWindows().filter((w) => slotOf.has(w.webContents.id)).sort((a, b) => slotOf.get(a.webContents.id)! - slotOf.get(b.webContents.id)!)
-  const views = await Promise.all(wins.map((w) => w.webContents.executeJavaScript('window.orcView?.() ?? null').catch(() => null)))
-  shellStore.write({ ...shellStore.read(), restore: views })
+/**
+ * Before an update installs: the remote hosts open now reopen with Orc, and their processes quit properly (the installer
+ * would otherwise end them by force). Restarting (not quitting) also brings this instance's windows back as they were.
+ */
+async function beforeInstall(others: { pid: number; host: string | null }[], restart: boolean): Promise<void> {
+  if (restart) {
+    const wins = BrowserWindow.getAllWindows().filter((w) => slotOf.has(w.webContents.id)).sort((a, b) => slotOf.get(a.webContents.id)! - slotOf.get(b.webContents.id)!)
+    const views = await Promise.all(wins.map((w) => w.webContents.executeJavaScript('window.orcView?.() ?? null').catch(() => null)))
+    shellStore.write({ ...shellStore.read(), restore: views })
+  }
   sharedStore.write({ ...sharedStore.read(), reopen: others.map((o) => o.host).filter(Boolean) })
-  for (const o of others) try { process.kill(o.pid) } catch { /* gone */ }
+  await quitOthers(others.map((o) => o.pid))
+}
+/** The install fell through after beforeInstall: the remote hosts it closed open again now, and nothing waits for a restart. */
+function installFailed(): void {
+  const reopen = (sharedStore.read().reopen as string[] | undefined) ?? []
+  sharedStore.write({ ...sharedStore.read(), reopen: [] })
+  shellStore.write({ ...shellStore.read(), restore: undefined })
+  reopen.forEach(openRemote)
 }
 
 /**
@@ -162,16 +183,15 @@ ipcMain.handle('updates.download', () => updater?.download())
 ipcMain.handle('updates.cancel', () => updater?.cancel())
 ipcMain.handle('updates.restart', () => updater?.restart())
 ipcMain.handle('updates.pending', () => updater?.pending() ?? null)
-ipcMain.handle('updates.restartNow', () => updater?.install())
+ipcMain.handle('updates.restartNow', () => updater?.install(true))
 ipcMain.handle('notices.list', () => notices())
 ipcMain.handle('notices.dismiss', (_e, id: string) => dropNotice(id))
 ipcMain.handle('window.restored', (e) => { // a window reopened after an update: its view from before, once
   const views = (shellStore.read().restore as unknown[] | undefined) ?? [], n = slotOf.get(e.sender.id)
-  if (n == null || views[n] == null) return null
-  const v = views[n]
+  if (n == null || n >= views.length) return null
   const rest = views.map((x, i) => (i === n ? null : x))
   shellStore.write({ ...shellStore.read(), restore: rest.some((x) => x != null) ? rest : undefined })
-  return v
+  return views[n] ?? null
 })
 
 app.whenReady().then(() => {
@@ -185,10 +205,17 @@ app.whenReady().then(() => {
   if (!remote) {
     const reopen = (sharedStore.read().reopen as string[] | undefined) ?? []
     if (reopen.length) { sharedStore.write({ ...sharedStore.read(), reopen: [] }); reopen.forEach(openRemote) }
-    if (!__ORC_OFFLINE__) void import('./updater').then((m) => { updater = m; m.startUpdater({ confirm: (v) => openDialog('restart', `Update to Orc ${v}`, 400, 280), beforeInstall }) }).catch((e) => console.error('updater failed to start:', e))
+    if (!__ORC_OFFLINE__) void import('./updater').then((m) => {
+      updater = m
+      m.startUpdater({ confirm: (v) => openDialog('restart', `Update to Orc ${v}`, 400, 280), beforeInstall, installFailed })
+      if (process.argv.includes('--check-updates')) checkForUpdates() // started by a remote host's window that wanted one
+    }).catch((e) => console.error('updater failed to start:', e))
   }
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())
 })
 // A remote instance lives as long as its window: closing it ends ssh and the server with it. Local keeps macOS's stay-in-Dock behaviour.
 app.on('window-all-closed', () => (remote || process.platform !== 'darwin') && app.quit())
-app.on('before-quit', () => remote?.shutdown())
+app.on('before-quit', (e) => {
+  remote?.shutdown()
+  if (updater?.installsOnQuit()) { e.preventDefault(); void updater.install(false) } // an update ready: installed on the way out
+})

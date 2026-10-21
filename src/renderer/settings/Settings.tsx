@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ChevronRight, Keyboard, Pencil, Search, Settings as Cog, User } from 'lucide-react'
 import type { UpdatePrefs } from '@shared/api'
 import { SHORTCUTS, comboOf, showCombo, type ShortcutAction } from '../lib/shortcuts'
+import { shownVersion } from '../lib/version'
 import { Resizer } from '../lib/Resizer'
 import { PANE, useStore, type SettingsTab } from '../stores/store'
 
@@ -85,6 +86,25 @@ function General() {
   }, [])
   const change = (patch: Partial<UpdatePrefs>) => window.orc.updates.setPrefs(patch).then(setPrefs)
   const off = __ORC_OFFLINE__ || !prefs
+  // The latest update notice, shown here too: Settings covers the sidebar, and so the bell's panel.
+  const notice = useStore((s) => s.notices.find((n) => n.id === 'update'))
+  const [checking, setChecking] = useState(false)
+  useEffect(() => setChecking(false), [notice])
+  useEffect(() => { if (checking) { const t = setTimeout(() => setChecking(false), 15_000); return () => clearTimeout(t) } }, [checking])
+  const remote = useStore((st) => st.transport?.kind === 'remote')
+  const [handedOver, setHandedOver] = useState(false)
+  const check = () => { if (remote) setHandedOver(true); else setChecking(true); window.orc.updates.check() } // remote: the local Orc checks, and shows the result
+  const status = handedOver ? 'Checking in your main Orc window, where the result shows.' : checking ? 'Checking for updates…' : !notice ? null
+    : notice.kind === 'update-downloading' ? `Downloading Orc ${shownVersion(notice.version)}${notice.total ? ` · ${Math.round((notice.transferred / notice.total) * 100)}%` : ''}`
+    : notice.kind === 'update-ready' ? `Orc ${shownVersion(notice.version)} is ready to install`
+    : notice.kind === 'update-available' ? `Orc ${shownVersion(notice.version)} is available`
+    : notice.kind === 'update-current' ? 'Orc is up to date'
+    : notice.message
+  const pill = 'rounded-full bg-[#2c2c2c] px-3.5 py-1.5 text-[13px] text-fg-bright hover:bg-[#363636] disabled:text-fg-3 disabled:hover:bg-[#2c2c2c]'
+  const action = notice?.kind === 'update-ready' ? <button onClick={() => window.orc.updates.restart()} className={pill}>Restart to update</button>
+    : notice?.kind === 'update-available' && notice.url ? <a href={notice.url} target="_blank" rel="noreferrer" className={pill}>Get it</a>
+    : notice?.kind === 'update-available' ? <button onClick={() => window.orc.updates.download()} className={pill}>Download</button>
+    : <button disabled={__ORC_OFFLINE__ || checking || notice?.kind === 'update-downloading'} onClick={check} className={pill}>Check for updates</button>
   return (
     <Page title="General">
       <h3 className="mt-12 text-[15px] font-semibold text-fg-bright">Updates</h3>
@@ -96,8 +116,8 @@ function General() {
         <Row title="Receive beta updates" detail="Get early versions before they're released. They may have bugs.">
           <Switch label="Receive beta updates" on={!__ORC_OFFLINE__ && !!prefs?.beta} disabled={off} onChange={(beta) => change({ beta })} />
         </Row>
-        <Row title="Version" detail={`Orc ${__ORC_VERSION__}${__ORC_OFFLINE__ ? ' (Offline)' : ''}`}>
-          <button disabled={__ORC_OFFLINE__} onClick={() => window.orc.updates.check()} className="rounded-full bg-[#2c2c2c] px-3.5 py-1.5 text-[13px] text-fg-bright hover:bg-[#363636] disabled:text-fg-3 disabled:hover:bg-[#2c2c2c]">Check for updates</button>
+        <Row title="Version" detail={<>Orc {__ORC_VERSION__}{__ORC_OFFLINE__ && ' (Offline)'}{status && <span data-testid="update-status" className="block text-fg-sub">{status}</span>}</>}>
+          {action}
         </Row>
       </div>
     </Page>

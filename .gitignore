@@ -4,3 +4,4 @@ dist
 test-results
 tests/screenshots
 .DS_Store
+out-offline

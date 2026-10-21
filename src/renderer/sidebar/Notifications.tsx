@@ -3,12 +3,11 @@ import { Bell } from 'lucide-react'
 import type { Notice } from '@shared/api'
 import { duration } from '../lib/duration'
 import { panel } from '../lib/Menu'
+import { shownVersion as shown } from '../lib/version'
 import { useStore } from '../stores/store'
 
 const RELEASES = 'https://github.com/yuvalino/orc/releases/tag/v'
 const WIDTH = 320
-/** "0.10.0-beta.1" → "0.10.0 beta 1". */
-const shown = (version: string) => version.replace(/-(\w+)\.(\d+)$/, ' $1 $2')
 const mb = (bytes: number) => { const n = bytes / 1048576; return `${n < 10 ? n.toFixed(1) : Math.round(n)} MB` }
 const button = 'rounded-full px-3 py-1 text-[12.5px]'
 const primary = `${button} bg-fg-bright font-medium text-bg hover:bg-white`

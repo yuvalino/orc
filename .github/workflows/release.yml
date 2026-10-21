@@ -7,7 +7,8 @@ name: Release
 #      host's install against it): regular, whose hosts download their bundle from this release, and Orc Offline, which
 #      carries every bundle and sends it over ssh;
 #   4. release: one GitHub release with both editions' installers, the bundles and bundles.json, plus regular Orc's
-#      update files (latest*.yml or beta*.yml, .blockmap, the macOS .zip it updates from).
+#      update files (latest*.yml, .blockmap, the macOS .zip it updates from; betas get latest*.yml too, which electron-updater
+#      falls back to after looking for beta*.yml).
 # A beta tag (vX.Y.Z-beta.N) publishes a prerelease of regular Orc only: Orc Offline has no updater and no betas.
 # Tagged builds take their version from the tag. Run by hand (workflow_dispatch) it's a dry run: everything but the release.
 # Speed: node_modules, Electron's downloads and build-server's cache are cached per runner; npm ci only runs on a miss.
@@ -85,7 +86,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
-        edition: ${{ fromJSON(contains(github.ref_name, '-') && '["regular"]' || '["regular", "offline"]') }} # betas: regular Orc only
+        edition: ${{ fromJSON(startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, '-') && '["regular"]' || '["regular", "offline"]') }} # beta tags: regular Orc only
         include:
           - { os: windows-latest, flags: --win --x64 }
           - { os: ubuntu-latest, flags: --linux --x64 }
@@ -132,7 +133,7 @@ jobs:
           fi
           if [ "${{ matrix.edition }}" = offline ]; then export ORC_OFFLINE=1; config="--config electron-builder.offline.yml"; fi
           npm run build
-          if [ -n "$ORC_OFFLINE" ] && grep -rqE 'quitAndInstall|electron-updater|releases.atom' out; then echo '::error::Orc Offline contains update code'; exit 1; fi # it must have none
+          if [ -n "$ORC_OFFLINE" ] && grep -rqE 'quitAndInstall|autoInstallOnAppQuit|releases.atom' out/main out/preload out/renderer; then echo '::error::Orc Offline contains update code'; exit 1; fi # it must have none
           npx electron-builder ${{ matrix.flags }} $config --publish never
         shell: bash
       - uses: actions/upload-artifact@v4
@@ -147,7 +148,6 @@ jobs:
             dist/Orc-*.zip
             dist/Orc-*.blockmap
             dist/latest*.yml
-            dist/beta*.yml
             !dist/Orc-Offline-*.blockmap
 
   release:
@@ -169,7 +169,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           name: Orc ${{ github.ref_name }}
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(github.ref_name, '-') }} # the release job only runs for tags
           generate_release_notes: true
           files: |
             app/*

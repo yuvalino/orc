@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import type { Activity } from '@shared/api'
 import logo from '../assets/logo.png'
+import { shownVersion } from '../lib/version'
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
 
@@ -17,7 +18,7 @@ export function RestartDialog() {
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   }, [])
-  const version = p?.version.replace(/-(\w+)\.(\d+)$/, ' $1 $2')
+  const version = p && shownVersion(p.version)
   const a = p?.activity
   const lines = a ? [
     ...a.working.map((t) => `${t} is working`),

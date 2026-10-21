@@ -152,7 +152,7 @@ export const useStore = create<State>((set, get) => ({
     api().on('menu:open-folder', () => get().addProject())
     api().notices.list().then((notices) => set({ notices }))
     api().on('notices:changed', (notices) => set({ notices }))
-    api().on('notices:open', () => set({ noticesOpen: true, sidebarOpen: true, settings: null }))
+    api().on('notices:open', () => { const s = get().settings; if (!s) set({ noticesOpen: true, sidebarOpen: true }); else if (s.tab !== 'general') get().openSettings('general') }) // in Settings, General shows the result itself
     menuShortcuts(get().shortcuts)
   },
 

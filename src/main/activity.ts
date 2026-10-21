@@ -1,5 +1,5 @@
 import { app, ipcMain } from 'electron'
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import type { Activity } from '@shared/api'
 import { baseUserData, remoteHost } from './shell'
@@ -7,7 +7,8 @@ import { baseUserData, remoteHost } from './shell'
 /**
  * Whether Orc is idle, for installing updates: no chat working or waiting on you, no unsent text, no input — in every Orc
  * process, since each remote host runs as its own. Each window reports its part; each process publishes its total in
- * <userData>/activity/<pid>.json, refreshed every 10 s, so the one that installs updates can read them all.
+ * <userData>/activity/<pid>.json, refreshed every 10 s, so the one that installs updates can read them all. A <pid>.quit
+ * file next to it asks that process to quit (before an update installs), which it notices within a second.
  */
 interface Published extends Activity { pid: number; host: string | null; lastInput: number; at: number }
 const windows = new Map<number, Activity>()
@@ -27,6 +28,8 @@ export function startActivity(): void {
   app.on('web-contents-created', (_e, wc) => wc.once('destroyed', () => { if (windows.delete(wc.id)) publish() }))
   publish()
   setInterval(publish, 10_000) // not unref()d: in Electron's main process an unref()d timer may never fire
+  const quitFile = join(dir, `${process.pid}.quit`)
+  setInterval(() => { if (existsSync(quitFile)) { rmSync(quitFile, { force: true }); app.quit() } }, 1000)
   app.on('quit', () => rmSync(own, { force: true }))
 }
 
@@ -35,7 +38,7 @@ export function allActivity(): { activity: Activity; lastInput: number; others: 
   const others: Published[] = []
   try {
     for (const f of readdirSync(dir)) {
-      if (f === `${process.pid}.json`) continue
+      if (!f.endsWith('.json') || f === `${process.pid}.json`) continue
       try {
         const p = JSON.parse(readFileSync(join(dir, f), 'utf-8')) as Published
         if (Date.now() - p.at < STALE) others.push(p); else rmSync(join(dir, f), { force: true })
@@ -46,5 +49,19 @@ export function allActivity(): { activity: Activity; lastInput: number; others: 
     activity: sum([...windows.values(), ...others]),
     lastInput: Math.max(lastInput, ...others.map((o) => o.lastInput)),
     others: others.map(({ pid, host }) => ({ pid, host }))
+  }
+}
+
+/**
+ * Ask other Orc processes to quit the normal way (a remote host's then stops its server and ssh); after `wait` ms, any
+ * still running is ended by force.
+ */
+export async function quitOthers(pids: number[], wait = 8000): Promise<void> {
+  for (const pid of pids) try { writeFileSync(join(dir, `${pid}.quit`), '') } catch { /* gone */ }
+  const live = () => pids.filter((pid) => existsSync(join(dir, `${pid}.json`))) // each removes its file as it quits
+  for (const end = Date.now() + wait; live().length && Date.now() < end;) await new Promise((r) => setTimeout(r, 200))
+  for (const pid of live()) {
+    try { process.kill(pid) } catch { /* gone */ }
+    rmSync(join(dir, `${pid}.json`), { force: true }); rmSync(join(dir, `${pid}.quit`), { force: true })
   }
 }
