@@ -1,34 +1,43 @@
 import { expect, test } from '@playwright/test'
-import { execSync } from 'child_process'
+import { execFileSync } from 'child_process'
 import { createHash } from 'crypto'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'fs'
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, readdirSync, statSync, writeFileSync } from 'fs'
 import { createServer } from 'http'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { launch, send, shot } from './helpers'
+import { fakeSsh } from './remote'
 
 const electron = require('electron') as unknown as string
-const server = join(__dirname, '../out/main/orc-server.js')
+const root = join(__dirname, '..')
+const server = join(root, 'out/main/orc-server.js')
 const version = require('../package.json').version as string
+const win = process.platform === 'win32'
+const tar = win ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar' // never Git's GNU tar
 
-/** An `ssh` that runs the remote command (its last argument) locally, so the real bootstrap executes under the temp HOME. */
-function sshRunner(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'orc-ssh-'))
-  writeFileSync(join(dir, 'ssh'), '#!/bin/sh\nfor a; do last=$a; done\nexec sh -c "$last"\n')
-  chmodSync(join(dir, 'ssh'), 0o755)
-  return dir
+/** A real orc-server.exe for this machine (a Node SEA of the current build), rebuilt when the server changed. */
+function seaServer(): string {
+  const exe = join(root, 'out/server', `${process.platform}-${process.arch}`, 'orc-server.exe')
+  if (!existsSync(exe) || statSync(exe).mtimeMs < statSync(server).mtimeMs) execFileSync(process.execPath, ['scripts/build-server.mjs', '--sea-only'], { cwd: root, stdio: 'ignore' })
+  return exe
 }
 
-/** A flat bundle whose orc-server is the fake-SDK server, like the real one's layout. */
+/**
+ * A flat bundle in the real one's layout. Unix: an orc-server script that runs the fake-SDK server. Windows hosts run
+ * orc-server.exe straight from cmd, so there it is the real thing (which reads the fake SDK and data dir from its env).
+ */
 function bundle(dataDir: string): Buffer {
   const dir = mkdtempSync(join(tmpdir(), 'orc-bundle-'))
-  writeFileSync(join(dir, 'orc-server'), `#!/bin/sh\nexec env ELECTRON_RUN_AS_NODE=1 ORC_FAKE_SDK="${join(__dirname, 'fixtures')}" "${electron}" "${server}" "$@" --data-dir "${dataDir}"\n`)
-  writeFileSync(join(dir, 'claude'), '#!/bin/sh\nexit 0\n')
-  chmodSync(join(dir, 'orc-server'), 0o755); chmodSync(join(dir, 'claude'), 0o755)
-  return execSync('tar cf - orc-server claude | gzip', { cwd: dir })
+  const [srv, claude] = win ? ['orc-server.exe', 'claude.exe'] : ['orc-server', 'claude']
+  if (win) copyFileSync(seaServer(), join(dir, srv))
+  else writeFileSync(join(dir, srv), `#!/bin/sh\nexec env ELECTRON_RUN_AS_NODE=1 ORC_FAKE_SDK="${join(__dirname, 'fixtures')}" "${electron}" "${server}" "$@" --data-dir "${dataDir}"\n`)
+  writeFileSync(join(dir, claude), win ? '' : '#!/bin/sh\nexit 0\n')
+  chmodSync(join(dir, srv), 0o755); chmodSync(join(dir, claude), 0o755)
+  return execFileSync(tar, ['czf', '-', srv, claude], { cwd: dir, maxBuffer: 512 * 1024 * 1024 })
 }
 
 test('first connect installs orc-server on the host: checksum refusal, the ~/.orc layout, no second download', async () => {
+  test.setTimeout(120_000) // the first run on Windows builds orc-server.exe
   const home = mkdtempSync(join(tmpdir(), 'orc-home-')), dataDir = mkdtempSync(join(tmpdir(), 'orc-remote-data-'))
   const good = bundle(dataDir)
   const bad = Buffer.from(good); bad[100] ^= 0xff
@@ -40,26 +49,29 @@ test('first connect installs orc-server on the host: checksum refusal, the ~/.or
   const manifest = join(home, 'bundles.json')
   writeFileSync(manifest, JSON.stringify({ version, bundles: { [`${process.platform}-${process.arch}`]: { url: `http://127.0.0.1:${port}/bundle.tgz`, sha256 } } }))
 
-  const c = await launch({ remote: 'fakehost', dataDir, seed: true, waitFor: 'none', env: { PATH: `${sshRunner()}:${process.env.PATH}`, HOME: home, ORC_BUNDLES_JSON: manifest } })
+  // The host runs the real bootstrap under a temp home: sh on Unix; on Windows cmd, which turns the Unix bootstrap away
+  // so Orc switches to the PowerShell one.
+  const ssh = fakeSsh(dataDir, { mode: 'runner', windows: win })
+  const c = await launch({ remote: 'fakehost', dataDir, seed: true, waitFor: 'none', env: { ...ssh.env, HOME: home, USERPROFILE: home, ORC_BUNDLES_JSON: manifest } })
   const { page } = c
-  await expect(page.getByText(/did not match its checksum/)).toBeVisible()
+  await expect(page.getByText(/did not match its checksum/)).toBeVisible({ timeout: 20_000 })
   expect(existsSync(join(home, '.orc', version))).toBe(false) // nothing half-installed
-  expect(readdirSync(join(home, '.orc')).filter((e) => e.startsWith('.tmp.'))).toEqual([]) // staging cleaned by the trap
+  expect(readdirSync(join(home, '.orc')).filter((e) => e.startsWith('.tmp.'))).toEqual([]) // staging cleaned up
 
   body = good
   await page.getByRole('button', { name: 'Retry' }).click()
   await expect(page.getByText(/Installing Orc server on fakehost/)).toBeVisible()
   await shot(page, 'install')
-  await expect(page.locator('textarea')).toBeVisible({ timeout: 15_000 })
-  expect(readdirSync(join(home, '.orc', version)).sort()).toEqual(['claude', 'orc-server'])
+  await expect(page.locator('textarea')).toBeVisible({ timeout: 30_000 })
+  expect(readdirSync(join(home, '.orc', version)).sort()).toEqual(win ? ['claude.exe', 'orc-server.exe'] : ['claude', 'orc-server'])
   await send(page, 'hello there')
   await expect(page.getByText('Hello from Claude')).toBeVisible()
   expect(hits).toBe(2)
 
   // The link drops: the reconnect finds the install in place and starts the server without downloading again.
-  execSync(`pkill -f "orc-server.js --stdio --data-dir ${dataDir}"`)
+  ssh.drop()
   await expect(page.getByText('Disconnected from fakehost')).toBeVisible()
-  await expect(page.locator('textarea')).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('textarea')).toBeVisible({ timeout: 20_000 })
   expect(hits).toBe(2)
   await c.close()
   http.close()

@@ -88,8 +88,9 @@ export class Remote {
     this.set({ phase: 'connecting', error: undefined, holder: undefined, prompt: undefined, notice: undefined, install: undefined })
     this.stderr = ''; this.noise = []
     this.takeoverWanted = takeover
-    const proc = spawn('ssh', [
-      '-T', '-o', 'StrictHostKeyChecking=ask', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
+    const [ssh, ...pre] = process.env.ORC_SSH ? JSON.parse(process.env.ORC_SSH) as string[] : ['ssh'] // tests: a fake ssh, as an argv prefix
+    const proc = spawn(ssh, [
+      ...pre, '-T', '-o', 'StrictHostKeyChecking=ask', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
       ...(process.platform === 'win32' ? [] : ['-o', 'ControlMaster=auto', '-o', `ControlPath=${this.control}`, '-o', 'ControlPersist=60']), // Windows' OpenSSH has no multiplexing
       '--', destination(this.host), remoteCommand(this.windows)
     ], { env: { ...process.env, ...this.askpass.env }, windowsHide: true })

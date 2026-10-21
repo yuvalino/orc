@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from 'child_process'
+import { execFile } from 'child_process'
 import { readdirSync, rmSync, statSync } from 'fs'
 import { createRequire } from 'module'
 import { hostname } from 'os'
@@ -56,15 +56,18 @@ function prune(): void {
   const root = dirname(dirname(process.execPath))
   const num = (v: string) => v.split('.').map((x) => parseInt(x, 10) || 0)
   const newer = (a: string, b: string) => { const x = num(a), y = num(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return (y[i] ?? 0) - (x[i] ?? 0); return 0 }
-  let ps = ''
-  try { ps = win ? execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', '(Get-CimInstance Win32_Process).CommandLine'], { encoding: 'utf-8', windowsHide: true }) : execFileSync('ps', ['-axo', 'args='], { encoding: 'utf-8' }) } catch { return }
-  try {
-    const entries = readdirSync(root)
-    const versions = entries.filter((e) => /^\d+\.\d+\.\d+/.test(e)).sort(newer)
-    const rm = (p: string) => { try { rmSync(p, { recursive: true, force: true }) } catch { /* in use */ } }
-    for (const v of versions.slice(2)) if (!ps.includes(join(root, v) + sep)) rm(join(root, v))
-    for (const e of entries) if (e.startsWith('.tmp.') && Date.now() - statSync(join(root, e)).mtimeMs > 86_400_000) rm(join(root, e))
-  } catch { /* best effort */ }
+  // Listing processes can take a minute on a slow Windows host (PowerShell's CIM query), so it must not block the event loop.
+  const [cmd, args] = win ? ['powershell', ['-NoProfile', '-NonInteractive', '-Command', '(Get-CimInstance Win32_Process).CommandLine']] : ['ps', ['-axo', 'args=']]
+  execFile(cmd, args, { encoding: 'utf-8', windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (e, ps) => {
+    if (e) return
+    try {
+      const entries = readdirSync(root)
+      const versions = entries.filter((e) => /^\d+\.\d+\.\d+/.test(e)).sort(newer)
+      const rm = (p: string) => { try { rmSync(p, { recursive: true, force: true }) } catch { /* in use */ } }
+      for (const v of versions.slice(2)) if (!ps.includes(join(root, v) + sep)) rm(join(root, v))
+      for (const e of entries) if (e.startsWith('.tmp.') && Date.now() - statSync(join(root, e)).mtimeMs > 86_400_000) rm(join(root, e))
+    } catch { /* best effort */ }
+  })
 }
 
 /** Without a forwarded token the host's own Claude login must exist; the SDK's binary answers that. */

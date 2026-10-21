@@ -3,6 +3,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { createServer, type Server } from 'net'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import askpassShim from './askpass-shim.js?raw'
 
 const win = process.platform === 'win32'
 
@@ -23,11 +24,11 @@ export class Askpass {
     const secret = randomBytes(16).toString('hex') // the pipe/socket name is guessable on Windows: callers must know this
     const sock = win ? `\\\\.\\pipe\\orc-askpass-${process.pid}-${secret}` : join(dir, 'sock')
     const helper = join(dir, 'askpass.js')
-    writeFileSync(helper, "const s=require('net').connect(process.env.ORC_ASKPASS_SOCK);s.write(JSON.stringify({k:process.env.ORC_ASKPASS_KEY,p:process.argv[2]??'',n:process.env.SSH_ASKPASS_PROMPT==='none'})+'\\n');let b='';s.on('data',d=>b+=d);s.on('end',()=>{const r=JSON.parse(b||'null');if(r===null)process.exit(1);process.stdout.write(r)})\n")
+    writeFileSync(helper, "const s=require('net').connect(process.env.ORC_ASKPASS_SOCK);s.write(JSON.stringify({k:process.env.ORC_ASKPASS_KEY,p:process.env.ORC_ASKPASS_PROMPT??process.argv[2]??'',n:process.env.SSH_ASKPASS_PROMPT==='none'})+'\\n');let b='';s.on('data',d=>b+=d);s.on('end',()=>{const r=JSON.parse(b||'null');if(r===null)process.exit(1);process.stdout.write(r)})\n")
     let askpass: string
-    if (win) { // ssh must start a real executable, and a .cmd cannot carry a multi-line prompt: run ourselves as Node with the helper preloaded, which then becomes the main script
+    if (win) { // ssh must start a real executable, and a .cmd cannot carry a multi-line prompt: run ourselves as Node, with a preload that makes the helper the main script
       const shim = join(dir, 'shim.js')
-      writeFileSync(shim, `process.argv.splice(1, 0, ${JSON.stringify(helper)})\n`)
+      writeFileSync(shim, askpassShim)
       askpass = process.execPath
       this.env = { ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: `--require ${JSON.stringify(shim)}` }
     } else {

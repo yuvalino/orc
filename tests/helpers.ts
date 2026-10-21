@@ -23,7 +23,7 @@ export async function launch(opts: { project?: boolean; chats?: { id: string; ti
   }
   mkdirSync(join(__dirname, 'screenshots'), { recursive: true })
   const app = await electron.launch({
-    args: [join(__dirname, '../out/main/index.js'), ...(opts.remote ? ['--remote', opts.remote] : [])],
+    args: [join(__dirname, '../out/main/index.js'), ...(opts.remote ? ['--remote', opts.remote] : []), ...(process.platform === 'linux' ? ['--password-store=basic'] : [])], // CI has no keyring for safeStorage
     env: { ...process.env, ORC_DATA_DIR: dataDir, ORC_USER_DATA_DIR: userData, ...(opts.live ? {} : { ORC_FAKE_SDK: join(__dirname, 'fixtures'), CLAUDE_CONFIG_DIR: join(dataDir, 'claude') }) /* the user's CLAUDE.md, never the real one */, ...opts.env }
   })
   const page = await app.firstWindow()

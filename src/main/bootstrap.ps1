@@ -20,9 +20,12 @@ frame '{"install":{"phase":"downloading"}}'
 frame '{"install":{"phase":"verifying"}}'
 if((Get-FileHash -Algorithm SHA256 "$s\bundle.tgz").Hash.ToLower() -ne $sha){fail 'sha256'}
 frame '{"install":{"phase":"unpacking"}}'
-& tar.exe xzf "$s\bundle.tgz" -C $s;if($LASTEXITCODE){fail 'unpacking'}
+# Windows' own tar: Git can put its GNU tar first on PATH, and that one takes "C:\..." for a remote host
+& "$env:SystemRoot\System32\tar.exe" xzf "$s\bundle.tgz" -C $s;if($LASTEXITCODE){fail 'unpacking'}
 Remove-Item "$s\bundle.tgz"
 if(-not (Test-Path "$dir\orc-server.exe")){Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue;Move-Item $s $dir -ErrorAction SilentlyContinue}
 Get-ChildItem $dir -Filter '.tmp.*' -Force -ErrorAction SilentlyContinue|Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 if(-not (Test-Path "$dir\orc-server.exe")){fail 'unpacking'}
 }finally{Remove-Item -Recurse -Force $s -ErrorAction SilentlyContinue}
+# Installed: succeed even though removing the (already moved) staging dir failed quietly, or cmd's && never starts the server
+exit 0

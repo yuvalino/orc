@@ -11,7 +11,7 @@ const win = process.platform === 'win32'
 const powershell = (cmd: string) => execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', cmd], { encoding: 'utf-8', windowsHide: true }).trim()
 
 /** Process start time, compared verbatim so a recycled pid never passes for the holder. */
-function startTime(pid: number): string | null {
+export function startTime(pid: number): string | null {
   try {
     if (process.platform === 'linux') { const s = readFileSync(`/proc/${pid}/stat`, 'utf-8'); return s.slice(s.lastIndexOf(')') + 2).split(' ')[19] ?? null }
     if (win) return powershell(`(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CreationDate.ToFileTimeUtc()`) || null // CIM, unlike Get-Process, also sees other users' processes
@@ -78,7 +78,10 @@ export class Lock {
   /** Run `cb` whenever this process is being evicted (or, outside Windows, plainly SIGTERMed) — also after it took the lock back. */
   onTakeover(cb: () => void): void {
     if (!win) { process.on('SIGTERM', cb); return }
-    watchFile(this.marker, { interval: 300 }, (cur) => { if (cur.mtimeMs) cb() })
+    watchFile(this.marker, { interval: 300 }, (cur) => { if (cur.mtimeMs && this.holds()) cb() }) // the taker watches the same marker it writes
+  }
+  private holds(): boolean {
+    try { return JSON.parse(readFileSync(this.path, 'utf-8')).pid === process.pid } catch { return false }
   }
 
   /** For an evicted holder: who took over, or null when it was an ordinary kill (no fresh marker). */

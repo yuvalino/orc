@@ -1,6 +1,6 @@
 name: CI
-# Every pull request: typecheck, build, and the Playwright suite (Electron against the fake SDK) under a virtual display.
-# Run it by hand (workflow_dispatch) to check a branch without a PR.
+# Every pull request: typecheck, build, and the Playwright suite (Electron against the fake SDK), on Linux under a
+# virtual display and on Windows. Run it by hand (workflow_dispatch) to check a branch without a PR.
 on:
   pull_request:
   workflow_dispatch:
@@ -11,8 +11,12 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,19 +24,23 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
-      # Electron's sandbox on a CI runner: Ubuntu 24.04 restricts the unprivileged user namespaces it uses; where Electron
-      # still ships the setuid helper, it must be root-owned.
-      - run: |
+      # Electron's sandbox on a Linux runner: Ubuntu 24.04 restricts the unprivileged user namespaces it uses; where
+      # Electron still ships the setuid helper, it must be root-owned.
+      - if: runner.os == 'Linux'
+        run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           if [ -f node_modules/electron/dist/chrome-sandbox ]; then
             sudo chown root:root node_modules/electron/dist/chrome-sandbox
             sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
           fi
-      - run: xvfb-run -a npm test
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm test
+      - if: runner.os == 'Windows'
+        run: npm test
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: test-results
+          name: test-results-${{ matrix.os }}
           path: |
             test-results
             tests/screenshots
