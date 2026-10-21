@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, net } from 'electron'
 import { execFile } from 'child_process'
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -9,23 +9,25 @@ import { dropNotice, setNotice, updateNotice } from './notices'
 import { updatePrefs } from './updates'
 
 /**
- * Regular Orc's updater (Orc Offline never loads this module, so none of it is in that app). electron-updater checks the
- * GitHub releases (prereleases too when beta updates are on), downloads only what changed, verifies and installs.
+ * Regular Orc's updater (Orc Offline never loads this module, so none of it is in that app). Orc finds the release to
+ * update to (newestPublished: the newest published one, betas when opted in); electron-updater then downloads only what
+ * changed, verifies and installs.
  * Automatic updates: download what's found, then install once every Orc process has been idle for 5 minutes in a row
  * (allActivity), or on quit. Restart to update installs now, after a dialog when it would interrupt something.
  * Installing is always ours (never electron-updater's own install-on-quit), so the remote-host windows are closed
  * properly first and come back afterwards.
  *
- * Tests: ORC_UPDATE_FEED points at a fake generic feed (and turns the updater on unpackaged), ORC_UPDATE_FIRST_CHECK_MS
+ * Tests: ORC_UPDATE_RELEASES points at a fake releases page (and turns the updater on unpackaged), ORC_UPDATE_FIRST_CHECK_MS
  * and ORC_UPDATE_IDLE_MS shorten the waits, ORC_UPDATE_INSTALLED names a file written instead of installing,
  * ORC_UPDATE_CAN_INSTALL=0 plays a platform Orc can't install on, and ORC_UPDATE_LOG names a file for electron-updater's log.
  */
-const RELEASES = 'https://github.com/yuvalino/orc/releases/tag/v'
+const RELEASES = process.env.ORC_UPDATE_RELEASES || 'https://github.com/yuvalino/orc/releases'
 const NOTICE = 'update' // one update card at a time
 const IDLE = Number(process.env.ORC_UPDATE_IDLE_MS) || 5 * 60_000
 const FIRST_CHECK = Number(process.env.ORC_UPDATE_FIRST_CHECK_MS) || 30_000
 const EVERY = 4 * 3600_000
-const feed = process.env.ORC_UPDATE_FEED
+const testing = !!process.env.ORC_UPDATE_RELEASES
+const CHANNEL = ({ darwin: 'latest-mac.yml', linux: 'latest-linux.yml' } as Record<string, string>)[process.platform] ?? 'latest.yml' // betas carry it too
 
 export interface UpdaterHooks {
   confirm(version: string): void // the Restart to update dialog
@@ -48,7 +50,7 @@ const isBeta = (v: string) => v.includes('-')
 /** Whether Orc can install updates here: an AppImage on Linux, a Developer ID–signed app on macOS (Squirrel.Mac refuses others). */
 let installable: Promise<boolean>
 function canInstall(): Promise<boolean> {
-  if (feed) return Promise.resolve(process.env.ORC_UPDATE_CAN_INSTALL !== '0')
+  if (testing) return Promise.resolve(process.env.ORC_UPDATE_CAN_INSTALL !== '0')
   if (process.platform === 'linux') return Promise.resolve(!!process.env.APPIMAGE)
   if (process.platform !== 'darwin') return Promise.resolve(true)
   const bundle = join(app.getPath('exe'), '../../..')
@@ -59,14 +61,53 @@ function canInstall(): Promise<boolean> {
  * /Applications on a standard account). Tried with a real file, since Windows' access checks ignore permissions.
  */
 function needsAdmin(): boolean {
-  if (feed) return false
+  if (testing) return false
   const dir = process.platform === 'darwin' ? dirname(join(app.getPath('exe'), '../../..')) : process.platform === 'linux' ? dirname(process.env.APPIMAGE ?? app.getPath('exe')) : dirname(app.getPath('exe'))
   const probe = join(dir, `.orc-write-test-${process.pid}`)
   try { writeFileSync(probe, ''); rmSync(probe, { force: true }); return false } catch { return true }
 }
 
 const failed = (message: string, version?: string) => setNotice({ id: NOTICE, kind: 'update-failed', version, message })
-const shortError = (e: unknown) => (e instanceof Error ? e.message : String(e)).split('\n')[0]
+/** What went wrong, in words: the common network failures named, anything else kept short (the log has the details). */
+function shortError(e: unknown): string {
+  const m = e instanceof Error ? e.message : String(e)
+  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_CONNECTION/.test(m)) return 'GitHub can\'t be reached. Check your internet connection.'
+  if (/\b(403|429)\b|rate limit/i.test(m)) return 'GitHub is limiting requests right now. Try again later.'
+  if (/sha512|checksum/i.test(m)) return 'the download was damaged. Try again.'
+  return m.split('\n')[0].replace(/\s*\(https?:\/\/\S+\)/g, '').slice(0, 160)
+}
+
+/** "0.10.0-beta.2" → [0, 10, 0, 'beta', 2]; stable sorts after its own betas. null when it isn't a version. */
+function versionKey(v: string): (string | number)[] | null {
+  const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?$/i.exec(v)
+  return m ? [+m[1], +m[2], +m[3], m[4] ?? '~', m[5] ? +m[5] : 0] : null // '~' sorts after every letter: stable > beta
+}
+export function compareVersions(a: string, b: string): number {
+  const x = versionKey(a)!, y = versionKey(b)!
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1
+  return 0
+}
+
+/**
+ * The release to update to: newest first by version (not feed order) among the published releases, betas only when
+ * opted in. A tag whose release isn't published yet (still building, or a failed build) has no update file, so it's
+ * skipped and the one below it counts — it never hides an older release that's there. null: nothing newer.
+ */
+async function newestPublished(): Promise<string | null> {
+  const res = await net.fetch(`${RELEASES}.atom`, { cache: 'no-store' })
+  if (!res.ok) throw new Error(`the releases feed answered ${res.status}`)
+  const feedText = await res.text()
+  const beta = updatePrefs().beta, current = __ORC_VERSION__
+  const tags = [...new Set([...feedText.matchAll(/\/releases\/tag\/([^"<\s]+)/g)].map((m) => decodeURIComponent(m[1])))]
+    .filter((t) => versionKey(t) && (beta || !isBeta(t)))
+    .sort((a, b) => compareVersions(b, a))
+  for (const tag of tags) {
+    if (compareVersions(tag, current) <= 0) return null // the rest are older
+    const file = await net.fetch(`${RELEASES}/download/${tag}/${CHANNEL}`, { method: 'HEAD', cache: 'no-store' })
+    if (file.ok) return tag
+  }
+  return null
+}
 /**
  * The prefs file is the truth: another Orc process (a remote host's window) may have changed it, with no prefsChanged()
  * here. So every decision re-reads it, and a ready beta goes once betas are off.
@@ -85,7 +126,13 @@ export async function check(byUser = false): Promise<void> {
   if (ready) { if (byUser) setNotice({ id: NOTICE, kind: 'update-ready', version: ready }); return }
   if (busy) { if (byUser) manual = true; return } // a check or download already running reports to you when it ends
   busy = 'checking'; manual = byUser
-  try { await autoUpdater.checkForUpdates() } catch (e) { if (manual) failed(`Couldn't check for updates: ${shortError(e)}`) } finally { if (busy === 'checking') busy = null }
+  try {
+    const tag = await newestPublished()
+    if (!tag) { if (manual) setNotice({ id: NOTICE, kind: 'update-current', version: __ORC_VERSION__ }); manual = false; return }
+    autoUpdater.setFeedURL({ provider: 'generic', url: `${RELEASES}/download/${tag}` }) // that release's own files
+    autoUpdater.previousBlockmapBaseUrlOverride = `${RELEASES}/download/v${__ORC_VERSION__}` // the installed version's, to download only what changed
+    await autoUpdater.checkForUpdates()
+  } catch (e) { if (manual) failed(`Couldn't check for updates: ${shortError(e)}`) } finally { if (busy === 'checking') busy = null }
 }
 
 export async function download(): Promise<void> {
@@ -179,13 +226,12 @@ function idleTick(): void {
 
 export function startUpdater(h: UpdaterHooks): void {
   hooks = h
-  if (!app.isPackaged && !feed) return // development: nothing to update
-  if (feed) { // unpackaged, Electron reports its own version as the app's
+  if (!app.isPackaged && !testing) return // development: nothing to update
+  if (testing) { // unpackaged, Electron reports its own version as the app's
     autoUpdater.forceDevUpdateConfig = true
     const config = join(mkdtempSync(join(tmpdir(), 'orc-update-')), 'app-update.yml') // what a packaged app carries
-    writeFileSync(config, `provider: generic\nurl: ${feed}\nupdaterCacheDirName: orc-updater-test\n`)
+    writeFileSync(config, `provider: generic\nurl: ${RELEASES}\nupdaterCacheDirName: orc-updater-test\n`)
     autoUpdater.updateConfigPath = config
-    autoUpdater.setFeedURL({ provider: 'generic', url: feed })
     const SemVer = autoUpdater.currentVersion.constructor as new (v: string) => typeof autoUpdater.currentVersion // its own semver's
     Object.assign(autoUpdater, { currentVersion: new SemVer(__ORC_VERSION__) })
   }
@@ -201,7 +247,7 @@ export function startUpdater(h: UpdaterHooks): void {
     const byUser = manual
     busy = null
     if (skipped.has(info.version) && !byUser) return
-    if (!(await installable)) { manual = false; return setNotice({ id: NOTICE, kind: 'update-available', version: info.version, url: `${RELEASES}${info.version}` }) }
+    if (!(await installable)) { manual = false; return setNotice({ id: NOTICE, kind: 'update-available', version: info.version, url: `${RELEASES}/tag/v${info.version}` }) }
     if (updatePrefs().auto || byUser) void download()
     else { manual = false; setNotice({ id: NOTICE, kind: 'update-available', version: info.version }) }
   })

@@ -8,19 +8,22 @@ import { join } from 'path'
 import { launch, shot } from './helpers'
 
 /**
- * A fake update feed (electron-updater's generic provider): the channel file for this platform naming `version`, and its
- * "installer", streamed slowly enough to watch and cancel. `failChecks`: that many checks fail first (HTTP 500).
+ * A fake GitHub releases page: `/releases.atom` lists the tags (`version` published, `pending` newer ones whose release
+ * isn't published yet: no files), and `/releases/download/<tag>/` has the published one's channel file and "installer",
+ * streamed slowly enough to watch and cancel. `failChecks`: that many checks fail first (the feed answers 500).
  */
-async function feed(o: { version?: string; failChecks?: number } = {}): Promise<{ url: string; server: Server; hits: () => number }> {
-  const version = o.version ?? '0.99.0', payload = randomBytes(2_500_000), name = `Orc-${version}-update.bin`
+async function feed(o: { version?: string; pending?: string[]; failChecks?: number } = {}): Promise<{ url: string; server: Server; hits: () => number }> {
+  const version = o.version ?? '0.99.0', tag = `v${version}`, payload = randomBytes(2_500_000), name = `Orc-${version}-update.bin`
   const sha512 = createHash('sha512').update(payload).digest('base64')
   const yml = `version: ${version}\nfiles:\n  - url: ${name}\n    sha512: ${sha512}\n    size: ${payload.length}\npath: ${name}\nsha512: ${sha512}\nreleaseDate: '2026-10-21T00:00:00.000Z'\n`
   const channel = { win32: 'latest.yml', darwin: 'latest-mac.yml', linux: 'latest-linux.yml' }[process.platform as 'win32']
+  const atom = `<feed>${[...(o.pending ?? []).map((v) => `v${v}`), tag].map((t) => `<entry><link rel="alternate" type="text/html" href="https://github.com/yuvalino/orc/releases/tag/${t}"/></entry>`).join('')}</feed>`
   let hits = 0, fails = o.failChecks ?? 0
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://x').pathname // electron-updater adds ?noCache=…
-    if (path.endsWith(channel)) { if (fails > 0) { fails--; res.statusCode = 500; return res.end('down') } return res.end(yml) }
-    if (!path.endsWith(name)) { res.statusCode = 404; return res.end() }
+    if (path === '/releases.atom') { if (fails > 0) { fails--; res.statusCode = 500; return res.end('down') } return res.end(atom) }
+    if (path === `/releases/download/${tag}/${channel}`) return res.end(req.method === 'HEAD' ? undefined : yml)
+    if (path !== `/releases/download/${tag}/${name}`) { res.statusCode = 404; return res.end() } // pending tags have nothing
     hits++
     res.writeHead(200, { 'Content-Length': payload.length, 'Content-Type': 'application/octet-stream' })
     let at = 0
@@ -28,12 +31,12 @@ async function feed(o: { version?: string; failChecks?: number } = {}): Promise<
     next()
   }).listen(0, '127.0.0.1')
   await new Promise((r) => server.once('listening', r))
-  return { url: `http://127.0.0.1:${(server.address() as { port: number }).port}/`, server, hits: () => hits }
+  return { url: `http://127.0.0.1:${(server.address() as { port: number }).port}/releases`, server, hits: () => hits }
 }
 
 const tmp = (name: string) => mkdtempSync(join(tmpdir(), `orc-${name}-`))
 const env = (url: string, installed: string, extra: Record<string, string> = {}) => ({
-  ORC_UPDATE_FEED: url, ORC_UPDATE_FIRST_CHECK_MS: '300', ORC_UPDATE_INSTALLED: installed,
+  ORC_UPDATE_RELEASES: url, ORC_UPDATE_FIRST_CHECK_MS: '300', ORC_UPDATE_INSTALLED: installed,
   ...(process.platform === 'linux' ? { APPIMAGE: join(tmp('appimage'), 'Orc.AppImage') } : {}), // electron-updater only updates an AppImage
   ...extra
 })
@@ -125,6 +128,26 @@ test('updates: with automatic updates off, a found update waits for Download', a
   f.server.close()
 })
 
+test('updates: a newer tag whose release isn\'t published yet is skipped: the published one below it still comes', async () => {
+  const f = await feed({ version: '0.99.0', pending: ['0.99.1', '1.0.0'] }), installed = join(tmp('installed'), 'installed.json')
+  const c = await launch({ env: env(f.url, installed) })
+  await bell(c.page).click()
+  await expect(panel(c.page).getByTestId('notice-update-ready')).toContainText('Orc 0.99.0 is ready to install', { timeout: 15_000 })
+  await c.close()
+  f.server.close()
+})
+
+test('updates: when the only newer tag is still being published, Check for updates says up to date', async () => {
+  const f = await feed({ version: '0.1.0', pending: ['0.99.0'] }), installed = join(tmp('installed'), 'installed.json')
+  const c = await launch({ env: env(f.url, installed, { ORC_UPDATE_FIRST_CHECK_MS: '600000' }) })
+  const { page } = c
+  await page.locator('nav').getByRole('button', { name: 'Help', exact: true }).click()
+  await page.getByRole('menu', { name: 'Help' }).getByRole('menuitem', { name: /Check for Updates/ }).click()
+  await expect(panel(page).getByTestId('notice-update-current')).toContainText('Orc is up to date')
+  await c.close()
+  f.server.close()
+})
+
 test('updates: Help → Check for Updates… opens the panel; a failed check offers Retry; up to date says so', async () => {
   const f = await feed({ version: '0.1.0', failChecks: 2 }), installed = join(tmp('installed'), 'installed.json') // the automatic check and the first manual one fail
   const c = await launch({ env: env(f.url, installed) })
@@ -170,7 +193,7 @@ test("updates: where Orc can't install (an unsigned Mac, not an AppImage), the c
   await bell(page).click()
   const available = panel(page).getByTestId('notice-update-available')
   await expect(available).toContainText('Orc 0.99.0 is available')
-  await expect(available.getByRole('link', { name: 'Get it' })).toHaveAttribute('href', 'https://github.com/yuvalino/orc/releases/tag/v0.99.0')
+  await expect(available.getByRole('link', { name: 'Get it' })).toHaveAttribute('href', `${f.url}/tag/v0.99.0`)
   await c.close()
   f.server.close()
 })
@@ -330,7 +353,7 @@ test('Orc Offline: the update controls are there but off, and its build has no u
   const walk = (d: string): string[] => readdirSync(d).flatMap((e) => statSync(join(d, e)).isDirectory() ? walk(join(d, e)) : [join(d, e)])
   for (const file of walk(out).filter((x) => /\.(js|html)$/.test(x))) expect(readFileSync(file, 'utf-8'), file).not.toMatch(/quitAndInstall|autoInstallOnAppQuit|releases\.atom/)
 
-  const c = await launch({ out: 'out-offline', env: { ORC_UPDATE_FEED: 'http://127.0.0.1:9/', ORC_UPDATE_FIRST_CHECK_MS: '100' } }) // pointed at a feed even: nothing there checks
+  const c = await launch({ out: 'out-offline', env: { ORC_UPDATE_RELEASES: 'http://127.0.0.1:9/releases', ORC_UPDATE_FIRST_CHECK_MS: '100' } }) // pointed at releases even: nothing there checks
   const { page } = c
   await page.locator('nav').getByRole('button', { name: 'Help', exact: true }).click()
   await expect(page.getByRole('menu', { name: 'Help' }).getByRole('menuitem', { name: /Check for Updates/ })).toBeDisabled()
