@@ -124,9 +124,24 @@ jobs:
       - if: matrix.edition == 'offline'
         uses: actions/download-artifact@v4
         with: { pattern: bundle-*, path: out/server, merge-multiple: true }
+      # The Developer ID certificate in a keychain of our own (GitHub's documented pattern): electron-builder's own temporary
+      # keychain fails on these runners (set-key-partition-list can't unlock it), so it finds the identity here instead.
+      - if: runner.os == 'macOS'
+        run: |
+          [ -n "$MAC_CSC_LINK" ] || exit 0
+          keychain="$RUNNER_TEMP/orc-signing.keychain-db" pass="$(openssl rand -hex 24)"
+          echo "$MAC_CSC_LINK" | base64 --decode > "$RUNNER_TEMP/orc-signing.p12"
+          security create-keychain -p "$pass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$pass" "$keychain"
+          security import "$RUNNER_TEMP/orc-signing.p12" -P "$MAC_CSC_KEY_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          rm "$RUNNER_TEMP/orc-signing.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$pass" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$keychain"
+        shell: bash
       - run: |
-          if [ "$RUNNER_OS" = macOS ] && [ -n "$MAC_CSC_LINK" ]; then
-            export CSC_LINK="$MAC_CSC_LINK" CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"
+          if [ "$RUNNER_OS" = macOS ] && [ -n "$MAC_CSC_LINK" ]; then # signs with the identity in our keychain (see above)
             [ -n "$MAC_APPLE_ID" ] && export APPLE_ID="$MAC_APPLE_ID" APPLE_APP_SPECIFIC_PASSWORD="$MAC_APPLE_APP_SPECIFIC_PASSWORD" APPLE_TEAM_ID="$MAC_APPLE_TEAM_ID"
           else
             export CSC_IDENTITY_AUTO_DISCOVERY=false
