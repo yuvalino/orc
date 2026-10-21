@@ -76,7 +76,9 @@ for (const t of targets) {
   const mac = t.startsWith('darwin')
   if (mac) sh('codesign', ['--remove-signature', bin])
   sh(process.execPath, [require.resolve('postject/dist/cli.js'), bin, 'NODE_SEA_BLOB', blob, '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2', ...(mac ? ['--macho-segment-name', 'NODE_SEA'] : [])]) // ELF, Mach-O and PE alike
-  if (mac) sh('codesign', ['-s', '-', bin])
+  // ORC_SIGN_IDENTITY (the release's Developer ID): hardened runtime and a timestamp, as notarization requires of everything
+  // inside Orc Offline, which carries these bundles; otherwise an ad-hoc signature, which Apple silicon needs to run at all.
+  if (mac) sh('codesign', process.env.ORC_SIGN_IDENTITY ? ['--force', '--sign', process.env.ORC_SIGN_IDENTITY, '--options', 'runtime', '--timestamp', '--entitlements', 'build/entitlements.mac.plist', bin] : ['-s', '-', bin])
   if (seaOnly) continue
   copyFileSync(claudeFor(t), join(dir, claude)); chmodSync(join(dir, claude), 0o755)
   const tgz = join(out, `orc-server-${t}.tar.gz`)

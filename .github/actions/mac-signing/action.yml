@@ -1,0 +1,27 @@
+name: macOS signing keychain
+description: >
+  Puts the Developer ID certificate in a keychain of our own (GitHub's documented pattern; electron-builder's own temporary
+  keychain fails on these runners) and outputs its identity. Does nothing when the certificate secret isn't set.
+inputs:
+  certificate: { description: 'The .p12, base64 (CSC_LINK)', required: true }
+  password: { description: "The .p12's password (CSC_KEY_PASSWORD)", required: true }
+outputs:
+  identity: { description: "The signing identity's hash, empty without a certificate", value: '${{ steps.keychain.outputs.identity }}' }
+runs:
+  using: composite
+  steps:
+    - id: keychain
+      shell: bash
+      env: { CERTIFICATE: '${{ inputs.certificate }}', PASSWORD: '${{ inputs.password }}' }
+      run: |
+        [ -n "$CERTIFICATE" ] || exit 0
+        keychain="$RUNNER_TEMP/orc-signing.keychain-db" pass="$(openssl rand -hex 24)"
+        echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/orc-signing.p12"
+        security create-keychain -p "$pass" "$keychain"
+        security set-keychain-settings -lut 21600 "$keychain"
+        security unlock-keychain -p "$pass" "$keychain"
+        security import "$RUNNER_TEMP/orc-signing.p12" -P "$PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+        rm "$RUNNER_TEMP/orc-signing.p12"
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$pass" "$keychain" > /dev/null
+        security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+        echo "identity=$(security find-identity -v -p codesigning "$keychain" | awk 'NR==1 { print $2 }')" >> "$GITHUB_OUTPUT"

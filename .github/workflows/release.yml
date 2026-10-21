@@ -47,8 +47,13 @@ jobs:
         shell: bash
       - uses: actions/cache@v4
         with: { path: out/server/cache, key: "server-${{ matrix.target }}-${{ hashFiles('package-lock.json', 'scripts/build-server.mjs') }}" }
+      - id: signing
+        if: runner.os == 'macOS' # notarizing Orc Offline, which carries these, needs them Developer ID–signed
+        uses: ./.github/actions/mac-signing
+        with: { certificate: '${{ secrets.CSC_LINK }}', password: '${{ secrets.CSC_KEY_PASSWORD }}' }
       - run: npm run build
       - run: node scripts/build-server.mjs ${{ matrix.target }}
+        env: { ORC_SIGN_IDENTITY: '${{ steps.signing.outputs.identity }}' }
       # This target's manifest entry; the app and release jobs merge them into bundles.json.
       - run: node -e "const t='${{ matrix.target }}';require('fs').writeFileSync('manifest-'+t+'.json',JSON.stringify({[t]:require('./bundles.json').bundles[t]}))"
       - uses: actions/upload-artifact@v4
@@ -124,22 +129,9 @@ jobs:
       - if: matrix.edition == 'offline'
         uses: actions/download-artifact@v4
         with: { pattern: bundle-*, path: out/server, merge-multiple: true }
-      # The Developer ID certificate in a keychain of our own (GitHub's documented pattern): electron-builder's own temporary
-      # keychain fails on these runners (set-key-partition-list can't unlock it), so it finds the identity here instead.
-      - if: runner.os == 'macOS'
-        run: |
-          [ -n "$MAC_CSC_LINK" ] || exit 0
-          keychain="$RUNNER_TEMP/orc-signing.keychain-db" pass="$(openssl rand -hex 24)"
-          echo "$MAC_CSC_LINK" | base64 --decode > "$RUNNER_TEMP/orc-signing.p12"
-          security create-keychain -p "$pass" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$pass" "$keychain"
-          security import "$RUNNER_TEMP/orc-signing.p12" -P "$MAC_CSC_KEY_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
-          rm "$RUNNER_TEMP/orc-signing.p12"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$pass" "$keychain" > /dev/null
-          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
-          security find-identity -v -p codesigning "$keychain"
-        shell: bash
+      - if: runner.os == 'macOS' # the Developer ID for electron-builder to find (see the action)
+        uses: ./.github/actions/mac-signing
+        with: { certificate: '${{ secrets.CSC_LINK }}', password: '${{ secrets.CSC_KEY_PASSWORD }}' }
       - run: |
           if [ "$RUNNER_OS" = macOS ] && [ -n "$MAC_CSC_LINK" ]; then # signs with the identity in our keychain (see above)
             [ -n "$MAC_APPLE_ID" ] && export APPLE_ID="$MAC_APPLE_ID" APPLE_APP_SPECIFIC_PASSWORD="$MAC_APPLE_APP_SPECIFIC_PASSWORD" APPLE_TEAM_ID="$MAC_APPLE_TEAM_ID"
