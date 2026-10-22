@@ -152,7 +152,9 @@ export const useStore = create<State>((set, get) => ({
     api().on('menu:open-folder', () => get().addProject())
     api().notices.list().then((notices) => set({ notices }))
     api().on('notices:changed', (notices) => set({ notices }))
-    api().on('notices:open', () => { const s = get().settings; if (!s) set({ noticesOpen: true, sidebarOpen: true }); else if (s.tab !== 'general') get().openSettings('general') }) // in Settings, General shows the result itself
+    const showNotices = () => { void api().notices.takeOpen(); const s = get().settings; if (!s) set({ noticesOpen: true, sidebarOpen: true }); else if (s.tab !== 'general') get().openSettings('general') } // in Settings, General shows the result itself
+    api().on('notices:open', showNotices)
+    api().notices.takeOpen().then((asked) => asked && showNotices()) // asked before this page was listening (Orc started just to check)
     menuShortcuts(get().shortcuts)
   },
 

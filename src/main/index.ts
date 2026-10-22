@@ -89,6 +89,7 @@ const openAbout = () => openDialog('about', 'About Orc', 340, 340)
  * Check for Updates over to it.
  */
 let updater: typeof import('./updater') | null = null
+const openNotices = new Set<number>() // windows asked to show the notifications panel, until their page has done so
 function checkForUpdates(): void {
   if (__ORC_OFFLINE__) return
   if (remoteHost) { // to the local instance, as openRemote does it the other way: a dev/test instance's dirs are its own
@@ -100,8 +101,8 @@ function checkForUpdates(): void {
   if (w) {
     if (w.isMinimized()) w.restore()
     if (!background) w.focus()
-    const open = () => w.webContents.send('notices:open')
-    if (w.webContents.isLoading()) w.webContents.once('did-finish-load', open); else open() // a window just opened (Orc started for this) would miss it
+    openNotices.add(w.webContents.id) // the window's page takes it when it starts (notices.takeOpen), in case it hasn't yet
+    w.webContents.send('notices:open') // a page already running takes it now
   }
   void updater?.check(true)
 }
@@ -184,8 +185,10 @@ ipcMain.handle('updates.cancel', () => updater?.cancel())
 ipcMain.handle('updates.restart', () => updater?.restart())
 ipcMain.handle('updates.pending', () => updater?.pending() ?? null)
 ipcMain.handle('updates.restartNow', () => updater?.install(true))
+ipcMain.handle('updates.moveToApplications', () => updater?.moveToApplications())
 ipcMain.handle('notices.list', () => notices())
 ipcMain.handle('notices.dismiss', (_e, id: string) => dropNotice(id))
+ipcMain.handle('notices.takeOpen', (e) => openNotices.delete(e.sender.id)) // true once: show the panel (asked before this page was listening)
 ipcMain.handle('window.restored', (e) => { // a window reopened after an update: its view from before, once
   const views = (shellStore.read().restore as unknown[] | undefined) ?? [], n = slotOf.get(e.sender.id)
   if (n == null || n >= views.length) return null

@@ -102,6 +102,7 @@ function General() {
     : notice.message
   const pill = 'rounded-full bg-[#2c2c2c] px-3.5 py-1.5 text-[13px] text-fg-bright hover:bg-[#363636] disabled:text-fg-3 disabled:hover:bg-[#2c2c2c]'
   const action = notice?.kind === 'update-ready' ? <button onClick={() => window.orc.updates.restart()} className={pill}>Restart to update</button>
+    : notice?.kind === 'update-available' && notice.move ? <button onClick={() => window.orc.updates.moveToApplications()} className={pill}>Move to Applications</button>
     : notice?.kind === 'update-available' && notice.url ? <a href={notice.url} target="_blank" rel="noreferrer" className={pill}>Get it</a>
     : notice?.kind === 'update-available' ? <button onClick={() => window.orc.updates.download()} className={pill}>Download</button>
     : <button disabled={__ORC_OFFLINE__ || checking || notice?.kind === 'update-downloading'} onClick={check} className={pill}>Check for updates</button>

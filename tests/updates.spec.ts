@@ -198,6 +198,25 @@ test("updates: where Orc can't install (an unsigned Mac, not an AppImage), the c
   f.server.close()
 })
 
+test("updates: a Mac app run from outside Applications offers Move to Applications instead of downloading", async () => {
+  const f = await feed(), installed = join(tmp('installed'), 'installed.json'), moved = join(tmp('moved'), 'moved')
+  const c = await launch({ env: env(f.url, installed, { ORC_UPDATE_CAN_INSTALL: 'move', ORC_UPDATE_MOVED: moved }) })
+  const { page } = c
+  await page.waitForTimeout(1500)
+  expect(f.hits()).toBe(0) // nothing downloaded: it couldn't be installed from here
+  await bell(page).click()
+  const available = panel(page).getByTestId('notice-update-available')
+  await expect(available).toContainText('Orc 0.99.0 is available')
+  await expect(available).toContainText('Orc can only update itself from your Applications folder.')
+  await available.getByRole('button', { name: 'Move to Applications' }).click()
+  await expect.poll(() => existsSync(moved)).toBe(true)
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Control+,')
+  await expect(page.getByRole('button', { name: 'Move to Applications' })).toBeVisible() // Settings offers it too
+  await c.close()
+  f.server.close()
+})
+
 test('updates: turning beta updates off drops a beta that was ready, and it never installs', async () => {
   const f = await feed({ version: '0.99.0-beta.1' }), installed = join(tmp('installed'), 'installed.json')
   const c = await launch({ userData: withPrefs({ auto: true, beta: true }), env: env(f.url, installed, { ORC_UPDATE_IDLE_MS: '2000' }) })

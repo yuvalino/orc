@@ -75,8 +75,13 @@ function Card({ n }: { n: Notice }) {
         <><button onClick={() => u.restart()} className={primary}>Restart to update</button><a href={`${RELEASES}${n.version}`} target="_blank" rel="noreferrer" className={secondary}>What's new</a></>
       ))
     case 'update-available':
-      return body(`Orc ${shown(n.version)} is available`, n.url ? 'Download it from the release page to install it.' : null, (
-        <>{n.url ? <a href={n.url} target="_blank" rel="noreferrer" className={primary}>Get it</a> : <button onClick={() => u.download()} className={primary}>Download</button>}<button onClick={dismiss} className={secondary}>Dismiss</button></>
+      return body(`Orc ${shown(n.version)} is available`, n.move ? 'Orc can only update itself from your Applications folder.' : n.url ? 'Download it from the release page to install it.' : null, (
+        <>
+          {n.move ? <button onClick={() => u.moveToApplications()} className={primary}>Move to Applications</button>
+            : n.url ? <a href={n.url} target="_blank" rel="noreferrer" className={primary}>Get it</a>
+            : <button onClick={() => u.download()} className={primary}>Download</button>}
+          <button onClick={dismiss} className={secondary}>Dismiss</button>
+        </>
       ))
     case 'update-failed':
       return body(n.message, null, <><button onClick={() => u.check()} className={primary}>Retry</button><button onClick={dismiss} className={secondary}>Dismiss</button></>)

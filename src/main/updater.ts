@@ -47,14 +47,28 @@ const skipped = new Set<string>() // cancelled or given up this session: automat
 let idleSince: number | null = null
 const isBeta = (v: string) => v.includes('-')
 
-/** Whether Orc can install updates here: an AppImage on Linux, a Developer ID–signed app on macOS (Squirrel.Mac refuses others). */
-let installable: Promise<boolean>
-function canInstall(): Promise<boolean> {
-  if (testing) return Promise.resolve(process.env.ORC_UPDATE_CAN_INSTALL !== '0')
-  if (process.platform === 'linux') return Promise.resolve(!!process.env.APPIMAGE)
-  if (process.platform !== 'darwin') return Promise.resolve(true)
+/**
+ * Whether Orc can install updates where it runs: yes; 'move' — a Mac app outside the Applications folders (run from the
+ * DMG, from Downloads, or from the read-only copy macOS runs a downloaded app from until it's moved), where Squirrel.Mac
+ * can't replace it: Move to Applications fixes that; 'link' — no updater here (not an AppImage on Linux, an app not
+ * signed with a Developer ID on macOS): the release page instead.
+ */
+type Installable = 'yes' | 'move' | 'link'
+let installable: Promise<Installable>
+function canInstall(): Promise<Installable> {
+  if (testing) { const t = process.env.ORC_UPDATE_CAN_INSTALL; return Promise.resolve(t === '0' ? 'link' : t === 'move' ? 'move' : 'yes') }
+  if (process.platform === 'linux') return Promise.resolve(process.env.APPIMAGE ? 'yes' : 'link')
+  if (process.platform !== 'darwin') return Promise.resolve('yes')
   const bundle = join(app.getPath('exe'), '../../..')
-  return new Promise((r) => execFile('codesign', ['-dv', '--verbose=2', bundle], (_e, _out, err) => r(/Authority=Developer ID Application/.test(String(err)))))
+  return new Promise((r) => execFile('codesign', ['-dv', '--verbose=2', bundle], (_e, _out, err) =>
+    r(!/Authority=Developer ID Application/.test(String(err)) ? 'link' : app.isInApplicationsFolder() ? 'yes' : 'move')))
+}
+
+/** Move to Applications (macOS): Orc moves itself there and relaunches, and can update from then on. */
+export function moveToApplications(): void {
+  if (process.env.ORC_UPDATE_MOVED) { writeFileSync(process.env.ORC_UPDATE_MOVED, 'moved'); return } // tests
+  try { if (!app.moveToApplicationsFolder()) failed('Orc stayed where it is. Move it to your Applications folder to get updates.') }
+  catch (e) { failed(`Couldn't move Orc to Applications: ${shortError(e)}`) }
 }
 /**
  * Installing would need an administrator: Orc lives where this account can't write (Windows all-users installs,
@@ -247,7 +261,8 @@ export function startUpdater(h: UpdaterHooks): void {
     const byUser = manual
     busy = null
     if (skipped.has(info.version) && !byUser) return
-    if (!(await installable)) { manual = false; return setNotice({ id: NOTICE, kind: 'update-available', version: info.version, url: `${RELEASES}/tag/v${info.version}` }) }
+    const here = await installable
+    if (here !== 'yes') { manual = false; return setNotice({ id: NOTICE, kind: 'update-available', version: info.version, ...(here === 'move' ? { move: true } : { url: `${RELEASES}/tag/v${info.version}` }) }) }
     if (updatePrefs().auto || byUser) void download()
     else { manual = false; setNotice({ id: NOTICE, kind: 'update-available', version: info.version }) }
   })

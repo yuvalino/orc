@@ -23,7 +23,7 @@ export interface UpdatePrefs { auto: boolean; beta: boolean }
  * manual check's "up to date".
  */
 export type Notice = { id: string } & (
-  | { kind: 'update-available'; version: string; url?: string } // url: get it from the release page (Orc can't install it here)
+  | { kind: 'update-available'; version: string; url?: string; move?: boolean } // url: get it from the release page (no updater here); move: Orc must move to Applications first (macOS)
   | { kind: 'update-downloading'; version: string; transferred: number; total: number; bytesPerSecond: number }
   | { kind: 'update-ready'; version: string }
   | { kind: 'update-failed'; version?: string; message: string }
@@ -91,8 +91,9 @@ export interface OrcApi {
     restart(): Promise<void> // Restart to update: asks first (a dialog) when it would interrupt something
     pending(): Promise<{ version: string; activity: Activity } | null> // for that dialog
     restartNow(): Promise<void> // the dialog's confirmation
+    moveToApplications(): Promise<void> // macOS, run from outside Applications: move there (and relaunch) to be able to update
   }
-  notices: { list(): Promise<Notice[]>; dismiss(id: string): Promise<void> }
+  notices: { list(): Promise<Notice[]>; dismiss(id: string): Promise<void>; takeOpen(): Promise<boolean> }
   activity: { report(a: Activity): Promise<void>; input(): Promise<void> } // a window's part in "idle": its chats and drafts, and that you used it
   transport: {
     state(): Promise<TransportState>
